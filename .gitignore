@@ -1,0 +1,36 @@
+# ---- 调试用浏览器 profile：内含 B站/DeepSeek 登录态，绝不可提交 ----
+.chrome-debug-profile/
+.edge-debug-profile/
+.edge-p2/
+.chrome-profile/
+*.chrome-profile/
+
+# ---- 旧版本备份 / 草稿 ----
+_backup/
+*.bak
+*.old
+*~
+
+# ---- 本地验证脚本与截图（依赖本机 CDP 端口，不适合入库）----
+*.mjs
+!build.mjs
+shot*.png.ignore
+_screens/
+*.tmp
+
+# ---- 构建产物 ----
+*.zip
+dist/
+
+# ---- 依赖 ----
+node_modules/
+
+# ---- 系统 / 编辑器 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# ---- 日志 ----
+*.log

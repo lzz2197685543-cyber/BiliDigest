@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "BiliDigest - B站字幕与 AI 总结",
+  "version": "3.0.0",
+  "description": "在B站视频页自动显示字幕，一键用 DeepSeek 总结视频内容，并与字幕对话。",
+  "permissions": [
+    "storage",
+    "scripting",
+    "tabs",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://www.bilibili.com/*",
+    "https://api.bilibili.com/*",
+    "https://aisubtitle.hdslb.com/*",
+    "https://*.hdslb.com/*",
+    "https://chat.deepseek.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.bilibili.com/video/*",
+        "https://www.bilibili.com/list/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "BiliDigest",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

@@ -1,0 +1,5 @@
+/* 所有样式都在 content.js 的 Shadow DOM 里定义，这里只做最小兜底。
+   Shadow DOM 天然隔离 B 站全局样式，无需再写 !important。 */
+#bilidigest-host {
+  all: initial;
+}
