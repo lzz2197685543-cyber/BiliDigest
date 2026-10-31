@@ -147,31 +147,44 @@ const CSS = `
    - 所有过渡走 160ms cubic-bezier(.4,0,.2,1)，跟 Material 一致
    ============================================================ */
 .wrap {
-  --pink: #fb7299;
+  /* ========== 设计令牌 ========== */
+  --pink: #fb7299;        /* 主色 */
   --pink-d: #f25b8b;
   --pink-dd: #e04a7c;
-  --pink-l: #fff3f6;
-  --ink: #0f1115;
-  --fg: #1f2329;
-  --sub: #6b7280;
-  --mute: #9aa1ac;
-  --bg: #ffffff;
-  --bg-2: #f7f8fa;
-  --bg-3: #eef0f4;
-  --line: #e6e8ec;
-  --line-2: #dcdfe5;
-  --line-3: #c9cfd8;
+  --pink-l: #fff0f4;      /* 主色淡底：选中行 / 用户气泡 / code */
+  --pink-b: #ffe3ec;      /* 主色淡边 */
+
+  --ink: #18181b;         /* 标题 */
+  --fg: #222222;          /* 正文 */
+  --sub: #71717a;         /* 次要文字 */
+  --mute: #a1a1aa;        /* 更弱：时间戳、占位、底栏 */
+
+  --bg: #ffffff;          /* 面板底 */
+  --bg-2: #f9fafb;        /* 悬停 */
+  --bg-3: #eef0f3;        /* 分段控件槽 */
+  --card: #fafafa;        /* 卡片底 */
+  --code-bg: #fff0f4;     /* 代码/标签底 */
+
+  --line: #ececef;
+  --line-2: #e0e0e6;
+  --line-3: #c9c9d1;
   --blue: #3b82f6;
   --green: #10b981;
-  /* 圆角收窄：从 8/10/14/18 降到 6/8 */
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 10px;
+
+  /* 圆角：面板 12 / 卡片 10 / 按钮 8 */
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 12px;
   --r-xl: 12px;
+
   --sh-1: 0 1px 2px rgba(16,24,40,.05);
   --sh-2: 0 2px 6px rgba(16,24,40,.07);
   --sh-3: 0 8px 28px -8px rgba(16,24,40,.16), 0 2px 8px -2px rgba(16,24,40,.08);
+
   --ease: cubic-bezier(.4, 0, .2, 1);
+  /* 统一过渡：所有可交互元素都用这一条 */
+  --t: all .15s ease;
+
   /* 全局面板内边距：顶栏、标签、工具栏、列表、输入区都对齐到这一条竖轴。
      之前是 12/13/14 混用，左边缘会轻微跳动，看着「不整齐」。 */
   --pad: 14px;
@@ -195,54 +208,160 @@ const CSS = `
   max-width: calc(100% - 20px);
 }
 
-/* ---------- 折叠态：字幕按钮 ----------
-   用 B站红实底。它是这个扩展在视频页上的唯一入口，
-   必须一眼可见、一眼认知到是「和 B站相关的东西」。
-   注意：仍然保持方角 + 细边框 + 无渐变，避免回到营销胶囊的观感。 */
+/* ---------- 深色模式 ----------
+   只覆盖令牌，组件规则一行都不用改。
+   外面包 @media，跟随系统；面板在 Shadow DOM 里也能正常响应。 */
+@media (prefers-color-scheme: dark) {
+  .wrap {
+    --ink: #f4f4f5;
+    --fg: #e8e8ea;
+    --sub: #a1a1aa;
+    --mute: #7c7c86;
+
+    --bg: #18181b;
+    --bg-2: #232327;
+    --bg-3: #2a2a31;
+    --card: #202024;
+    --code-bg: #3a2029;
+
+    --line: #2c2c33;
+    --line-2: #3a3a42;
+    --line-3: #4d4d57;
+
+    --pink-l: #3a2029;
+    --pink-b: #4a2632;
+
+    --sh-1: 0 1px 2px rgba(0,0,0,.4);
+    --sh-2: 0 2px 6px rgba(0,0,0,.45);
+    --sh-3: 0 8px 28px -8px rgba(0,0,0,.7), 0 2px 8px -2px rgba(0,0,0,.5);
+  }
+}
+
+/* ---------- 折叠态：悬浮 AI 入口 ----------
+   它是扩展在视频页上的唯一入口，要「浮在页面上」而不只是「贴一个标签」：
+   胶囊形 + 主色渐变 + 带主色的柔和投影 + 悬停抬升。
+   注意投影用的是主色的 rgba 而不是中性黑——这样它看起来是被粉色「托着」，
+   而不是盖了一层灰。 */
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--pink);
-  border-radius: var(--r-sm);
-  background: var(--pink);
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px 0 8px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fc92b4 0%, #fb7299 52%, #f0578a 100%);
   color: #fff;
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   font-family: inherit;
-  letter-spacing: .2px;
-  cursor: pointer;
-  box-shadow: var(--sh-1);
-  transition: background-color .13s var(--ease), border-color .13s var(--ease);
+  letter-spacing: .3px;
+  cursor: grab;
+  box-shadow:
+    0 1px 1px rgba(240,87,138,.28),
+    0 6px 16px -2px rgba(251,114,153,.42),
+    0 14px 30px -10px rgba(251,114,153,.34),
+    inset 0 1px 0 rgba(255,255,255,.42);
+  transition: transform .18s var(--ease), box-shadow .18s var(--ease), filter .18s var(--ease);
   white-space: nowrap;
   max-width: 220px;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
-.pill:hover { background: var(--pink-d); border-color: var(--pink-d); }
-.pill:active { background: var(--pink-dd); border-color: var(--pink-dd); }
-.pill:disabled { background: var(--bg-3); border-color: var(--line-2); color: var(--mute); cursor: not-allowed; }
-/* 加载中 / 无字幕：降级为中性灰，避免红色一直闪 */
-.pill.dim { background: var(--bg-3); border-color: var(--line-2); color: var(--sub); box-shadow: none; }
-.pill.dim:hover { background: var(--bg-2); border-color: var(--line-3); }
-/* 状态点：字幕就绪 = 绿点；无字幕/加载中 = 灰点。
-   红底上放绿点对比度偏低，所以加一圈白色描边把它「托」出来。 */
-.pill .dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .85);
+.pill > [data-el="pillText"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* 悬停：轻微放大 + 阴影加深 + 亮度提升 */
+.pill:hover {
+  transform: translateY(-1px) scale(1.03);
+  filter: brightness(1.04);
+  box-shadow:
+    0 2px 3px rgba(240,87,138,.3),
+    0 10px 22px -2px rgba(251,114,153,.52),
+    0 20px 40px -12px rgba(251,114,153,.42),
+    inset 0 1px 0 rgba(255,255,255,.5);
+}
+.pill:active {
+  transform: translateY(0) scale(.98);
+  filter: brightness(.97);
+  box-shadow:
+    0 1px 1px rgba(240,87,138,.3),
+    0 3px 10px -2px rgba(251,114,153,.4),
+    inset 0 1px 0 rgba(255,255,255,.35);
+}
+.pill:focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 3px;
+}
+
+/* 图标底座：半透明白圆，把图形从渐变底上「托」出来 */
+.pill-ic {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.2);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.3);
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
 }
-.pill.dim .dot { background: var(--mute); box-shadow: none; }
-/* 加载指示器：红底时用白色，灰底时用红环 */
+.pill-ic svg { width: 15px; height: 15px; display: block; }
+
+/* 加载中 / 无字幕：降级为中性白底，避免粉色一直亮着 */
+.pill.dim {
+  background: var(--bg);
+  color: var(--sub);
+  box-shadow:
+    0 0 0 1px var(--line-2),
+    0 2px 6px -2px rgba(16,24,40,.1),
+    0 8px 20px -8px rgba(16,24,40,.14);
+  filter: none;
+}
+.pill.dim:hover {
+  filter: none;
+  color: var(--fg);
+  box-shadow:
+    0 0 0 1px var(--line-3),
+    0 4px 10px -2px rgba(16,24,40,.14),
+    0 12px 26px -10px rgba(16,24,40,.18);
+}
+.pill.dim .pill-ic {
+  background: var(--bg-3);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.pill.dim .pill-ic svg { color: var(--mute); }
+
+/* 状态点：字幕就绪 = 绿点，挂在图标右上角当角标。
+   描边色跟按钮底色一致，看起来是「嵌」进去的而不是贴上去的。 */
+.pill .dot {
+  position: absolute;
+  right: -1px;
+  top: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 2px #fb7ba2;
+}
+.pill.dim .dot {
+  background: var(--mute);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+/* 加载指示器 */
 .spin {
-  width: 11px; height: 11px; border-radius: 50%;
-  border: 1.5px solid rgba(255,255,255,.45);
+  position: absolute;
+  right: -1px;
+  top: -1px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.5);
   border-top-color: #fff;
   animation: rot .7s linear infinite;
-  flex: 0 0 auto;
 }
 .pill.dim .spin { border-color: var(--line-3); border-top-color: var(--pink); }
 @keyframes rot { to { transform: rotate(360deg); } }
@@ -348,44 +467,48 @@ const CSS = `
 .iconbtn:active { background: var(--bg-3); border-color: var(--line-2); color: var(--fg); }
 .iconbtn:disabled { color: var(--mute); background: none; border-color: transparent; cursor: not-allowed; }
 
-/* 顶部标签：下划线式，无背景块 */
+/* 顶部标签：分段胶囊（segmented control）。
+   槽是浅灰底，选中的那一格浮起来变成白底，比下划线更「像可点击的控件」。 */
 .tabs {
   display: flex;
-  gap: 0;
-  padding: 0 var(--pad);
-  border-bottom: 1px solid var(--line);
+  gap: 3px;
+  margin: 0 var(--pad) 9px;
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--bg-3);
+  border: none;
   flex: 0 0 auto;
-  background: var(--bg);
 }
 .tab {
-  position: relative;
-  /* 左右不留内边距，靠 margin 拉开间距：
-     这样第一个标签的文字正好压在 --pad 那条竖轴上，和其他行对齐 */
-  padding: 9px 0 8px;
-  margin-right: 24px;
+  flex: 1 1 0;
+  padding: 6px 0;
   border: none;
-  background: none;
-  border-radius: 0;
+  border-radius: 7px;
+  background: transparent;
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 500;
   color: var(--sub);
   cursor: pointer;
   white-space: nowrap;
-  transition: color .13s var(--ease);
+  transition: var(--t);
 }
-.tab:hover { color: var(--fg); }
-.tab:active { color: var(--fg); }
-.tab.active { color: var(--pink); font-weight: 600; }
-.tab.active::after {
-  content: "";
-  position: absolute;
-  /* 下划线贴合文字宽度，不再向两侧多出 8px */
-  left: 0; right: 0; bottom: -1px;
-  height: 2px;
-  background: var(--pink);
+.tab:hover { color: var(--fg); background: rgba(255,255,255,.55); }
+.tab:active { background: rgba(255,255,255,.8); }
+.tab.active {
+  background: var(--bg);
+  color: var(--pink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(16,24,40,.09);
 }
+.tab.active:hover { background: var(--bg); }
+/* 旧的下划线在分段模式里不要了 */
+.tab.active::after { display: none; }
 .tab:disabled { color: var(--mute); cursor: not-allowed; }
+@media (prefers-color-scheme: dark) {
+  .tab:hover { background: rgba(255,255,255,.06); }
+  .tab.active { box-shadow: 0 1px 2px rgba(0,0,0,.5); }
+}
 
 .pane { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .pane.hidden { display: none; }
@@ -401,44 +524,56 @@ const CSS = `
   background: var(--bg);
 }
 
-/* 复选框：自定义，更精致 */
+/* 开关（toggle）。仍然是原生 <input type="checkbox">，
+   只是把外观整个接管掉——这样 JS 读 .checked 的逻辑一行都不用改，
+   键盘可聚焦、读屏可识别也都还在。 */
 .chk {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   font-size: 12px;
   color: var(--sub);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  transition: color .16s var(--ease);
+  transition: var(--t);
 }
 .chk:hover { color: var(--fg); }
+
 .chk input[type="checkbox"] {
   appearance: none;
-  width: 14px; height: 14px;
-  margin: 0;
-  border: 1.5px solid var(--line-2);
-  border-radius: 4px;
-  background: #fff;
-  cursor: pointer;
+  -webkit-appearance: none;
   position: relative;
-  transition: background .16s var(--ease), border-color .16s var(--ease);
+  width: 30px;
+  height: 17px;
+  margin: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--line-3);
+  cursor: pointer;
   flex: 0 0 auto;
+  transition: background-color .18s var(--ease);
 }
-.chk input[type="checkbox"]:checked {
-  background: var(--pink);
-  border-color: var(--pink);
-}
-.chk input[type="checkbox"]:checked::after {
+.chk input[type="checkbox"]::after {
   content: "";
   position: absolute;
-  left: 3.5px; top: 1px;
-  width: 4px; height: 7px;
-  border: solid #fff;
-  border-width: 0 1.8px 1.8px 0;
-  transform: rotate(45deg);
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16,24,40,.28);
+  transition: transform .18s var(--ease);
 }
+.chk input[type="checkbox"]:checked { background: var(--pink); }
+.chk input[type="checkbox"]:checked::after { transform: translateX(13px); }
+.chk input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 2px;
+}
+/* 开着的时候把标签文字也提亮一点，状态更明确 */
+.chk:has(input[type="checkbox"]:checked) { color: var(--fg); }
 
 /* ---------- 聊天空态 ----------
    垂直居中 + 示例问题，让空白区域有结构，而不是顶上挂一行提示。 */
@@ -505,12 +640,12 @@ const CSS = `
 .md li { margin: 3px 0; }
 .md li::marker { color: var(--mute); }
 .md code {
-  background: var(--bg-3);
+  background: var(--code-bg);
   padding: 1.5px 5px;
   border-radius: 5px;
   font-size: 12px;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  color: #be185d;
+  color: var(--pink-dd);
 }
 .md pre {
   background: var(--bg-2);
@@ -573,7 +708,7 @@ const CSS = `
   padding: 7px 11px;
   background: var(--pink-l);
   color: var(--fg);
-  border: 1px solid #ffe0e8;
+  border: 1px solid var(--pink-b);
   border-radius: var(--r-md);
   border-bottom-right-radius: 3px;
 }
@@ -602,9 +737,9 @@ const CSS = `
 }
 .seg {
   display: inline-flex;
-  padding: 2px;
-  gap: 2px;
-  border-radius: var(--r-sm);
+  padding: 3px;
+  gap: 3px;
+  border-radius: var(--r-md);
   background: var(--bg-3);
   border: none;
 }
@@ -616,8 +751,8 @@ const CSS = `
   font-size: 12px;
   font-weight: 500;
   color: var(--sub);
-  padding: 3px 10px;
-  border-radius: 4px;
+  padding: 4px 11px;
+  border-radius: 7px;
   white-space: nowrap;
   transition: background-color .13s var(--ease), color .13s var(--ease),
               border-color .13s var(--ease);
@@ -626,7 +761,7 @@ const CSS = `
 .segbtn:active { background: rgba(255,255,255,.9); color: var(--fg); }
 /* 选中态：白底 + 细边框，不用投影 */
 .segbtn.active {
-  background: #fff;
+  background: var(--bg);
   border-color: var(--line-2);
   color: var(--fg);
   font-weight: 600;
@@ -663,10 +798,9 @@ const CSS = `
   padding: 0 10px;
   border: 1px solid var(--line-2);
   border-radius: var(--r-sm);
-  background: #fff;
+  background: var(--bg);
   white-space: nowrap;
-  transition: background-color .13s var(--ease), border-color .13s var(--ease),
-              color .13s var(--ease);
+  transition: var(--t);
 }
 .file-label:hover { background: var(--bg-2); border-color: var(--line-3); color: var(--fg); }
 .file-label:active { background: var(--bg-3); border-color: var(--line-3); }
@@ -690,7 +824,7 @@ const CSS = `
 .chat-input::placeholder { color: var(--mute); }
 .chat-input:focus {
   border-color: var(--pink);
-  background: #fff;
+  background: var(--bg);
 }
 
 /* 输入框下方快捷键提示 */
@@ -736,7 +870,7 @@ const CSS = `
   padding: 0 11px;
   border: 1px solid var(--line-2);
   border-radius: var(--r-sm);
-  background: #fff;
+  background: var(--bg);
   color: var(--fg);
   font-family: inherit;
   font-size: 12.5px;
@@ -837,9 +971,9 @@ const CSS = `
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: #fff;
+  background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   padding: 3px 7px;
   font-size: 11.5px;
   color: var(--fg);
@@ -895,9 +1029,9 @@ const CSS = `
 /* ---------- 提示框 ---------- */
 .hint-box {
   margin: 10px 0;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: var(--r-md);
-  background: var(--bg-2);
+  background: var(--card);
   border: 1px solid var(--line);
   font-size: 12.5px;
   color: var(--sub);
@@ -907,11 +1041,91 @@ const CSS = `
 .chat-body .hint-box:first-child { margin-top: 4px; }
 .hint-box .btn { margin-top: 9px; }
 
+/* ---------- 卡片 ----------
+   总结按 ## 小节拆成独立卡片，每节一张。
+   卡片之间 12px，卡内 14px 内边距。 */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 14px;
+  margin-bottom: 12px;
+  transition: var(--t);
+}
+.card:last-child { margin-bottom: 0; }
+.card:hover { border-color: var(--line-2); }
+/* 卡片标题：由 markdown 的 h2 渲染而来 */
+.card > h2,
+.card > h3 {
+  font-size: 12.5px !important;
+  font-weight: 650 !important;
+  color: var(--pink) !important;
+  margin: 0 0 8px !important;
+  letter-spacing: .2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.card > h2::before,
+.card > h3::before {
+  content: "";
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--pink);
+  flex: 0 0 auto;
+}
+/* 卡片内的要点行：hover 浅灰，时间标签是可点的小胶囊 */
+.card li { transition: var(--t); border-radius: 6px; }
+.card li:hover { background: var(--bg-2); }
+
+/* 总结里形如 [02:15] 的时间标签 */
+.ts-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  margin: 0 2px;
+  border-radius: 999px;
+  background: var(--pink-l);
+  color: var(--pink-dd);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  border: none;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  transition: var(--t);
+  vertical-align: 1px;
+}
+.ts-tag:hover { background: var(--pink); color: #fff; }
+
 /* ---------- 搜索框 ---------- */
+/* 放大镜绝对定位叠在输入框左侧。input 仍是原来那个元素，
+   els.search 与 input 事件都不用改。 */
+.search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.search-ic {
+  position: absolute;
+  left: 9px;
+  width: 14px;
+  height: 14px;
+  color: var(--mute);
+  pointer-events: none;
+  transition: color .15s ease;
+}
+.search-wrap:focus-within .search-ic { color: var(--pink); }
+
 .search {
   flex: 1;
-  height: 30px;
-  padding: 0 10px;
+  height: 32px;
+  padding: 0 10px 0 29px;
+  min-width: 0;
   border: 1px solid var(--line-2);
   border-radius: var(--r-sm);
   background: var(--bg-2);
@@ -924,7 +1138,7 @@ const CSS = `
 .search::placeholder { color: var(--mute); }
 .search:focus {
   border-color: var(--pink);
-  background: #fff;
+  background: var(--bg);
 }
 
 /* ---------- 滚动容器 ---------- */
@@ -1032,11 +1246,25 @@ const CSS = `
   letter-spacing: .2px;
 }
 .tag.ok { background: #dcfce7; color: #15803d; }
-.tag.ai { background: #dbeafe; color: #1d4ed8; }
+.tag.ai { background: var(--pink-l); color: var(--pink-dd); }
 
 .sp { flex: 1; }
 .hidden { display: none !important; }
 
+/* ---------- 深色模式：组件级覆盖 ---------- */
+@media (prefers-color-scheme: dark) {
+  .panel { outline: 1px solid rgba(255,255,255,.06); }
+  .tag.ok { background: #14361f; color: #4ade80; }
+  .tag.ai { background: #3a2029; color: #f9a8c4; }
+  .md mark { background: #5a4a10; color: #fde68a; }
+  .cue .tx mark { background: #5a4a10; color: #fde68a; }
+  .md code { color: #f9a8c4; }
+  .ts-tag { color: #f9a8c4; }
+  .attach .rm:hover { color: #f87171; }
+  .state .err { color: #f87171; }
+  .pill .dot { box-shadow: 0 0 0 2px #fb7ba2; }
+  .pill.dim .dot { box-shadow: 0 0 0 2px var(--bg); }
+}
 /* ---------- 面板拖拽与缩放 ---------- */
 
 /* 标题栏是拖动把手。用 grab 光标明确「这里可以抓」 */
@@ -1252,7 +1480,14 @@ function build() {
       <!-- 字幕 -->
       <div class="pane pane-sub">
         <div class="tools">
-          <input class="search" type="text" placeholder="搜索字幕…" />
+          <span class="search-wrap">
+            <svg class="search-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="M20 20l-3.5-3.5"></path>
+            </svg>
+            <input class="search" type="text" placeholder="搜索字幕…" />
+          </span>
           <button class="btn" data-act="export-txt" title="导出为 TXT 文件">导出</button>
           <button class="btn" data-act="copy" title="复制全部字幕">复制</button>
         </div>
@@ -1311,7 +1546,19 @@ function build() {
       <!-- 右下角拖拽柄：按住可自由调整面板宽高 -->
       <div class="resizer" data-el="resizer" title="拖拽调整大小（双击恢复默认）"></div>
     </div>
-    <button class="pill" data-act="toggle"><span class="dot"></span><span data-el="pillText">加载字幕…</span></button>
+    <button class="pill" data-act="toggle" title="打开 BiliDigest">
+      <span class="pill-ic" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-3.9-.9L3 21l1.9-4.9A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"></path>
+          <path d="M8.5 10v3"></path>
+          <path d="M12 8.5v6"></path>
+          <path d="M15.5 10.5v2"></path>
+        </svg>
+        <span class="dot"></span>
+      </span>
+      <span data-el="pillText">加载字幕…</span>
+    </button>
   `;
   shadow.appendChild(wrap);
 
@@ -1506,6 +1753,12 @@ function onPanelClick(e) {
     els.chatInput.value = fillEl.dataset.fill;
     els.chatInput.focus();
     els.chatInput.dispatchEvent(new Event("input"));
+    return;
+  }
+  // 总结卡片里的时间胶囊：点了跳到对应位置
+  const seekEl = e.target.closest("[data-seek]");
+  if (seekEl) {
+    seekTo(parseTs(seekEl.dataset.seek));
     return;
   }
   const actEl = e.target.closest("[data-act]");
@@ -2094,6 +2347,13 @@ function renderFailure() {
 // 播放器联动：点击跳到对应时间、自动高亮当前句
 // ---------------------------------------------------------------------------
 
+/** "02:15" / "1:02:15" → 秒数 */
+function parseTs(s) {
+  const parts = String(s).split(":").map((x) => Number(x));
+  if (!parts.length || parts.some((n) => !Number.isFinite(n))) return 0;
+  return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
 function seekTo(sec) {
   const v = document.querySelector("video");
   if (v) {
@@ -2354,6 +2614,33 @@ function requireSubtitle(container) {
   return false;
 }
 
+/**
+ * 总结正文美化：
+ *   1. 把 [02:15] 这种时间戳变成可点击的小胶囊
+ *   2. 按 ## 小节把内容拆成独立卡片
+ *
+ * 之所以在 HTML 字符串上做而不是改 DOM：流式输出时每帧都要重渲染，
+ * 字符串处理一次到位，比反复遍历 DOM 便宜。
+ */
+function decorateSummary(html) {
+  if (!html) return html;
+
+  // 只认方括号包起来的时间戳，避免误伤正文里的普通数字
+  let out = html.replace(
+    /\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g,
+    '<button class="ts-tag" data-seek="$1" title="跳转到 $1">$1</button>'
+  );
+
+  // 按二级标题切块。第一块可能是标题前的内容（比如「字幕质量有限」的提示）
+  // 流式输出时只要出现第一个小节就立刻成卡，避免「先平铺、结束才变卡片」的跳变
+  const parts = out.split(/(?=<h2[\s>])/i);
+  const cards = parts.filter((p) => /^\s*<h2[\s>]/i.test(p));
+  if (!cards.length) return out;   // 没有分节结构就保持原样
+
+  const head = parts.length && !/^\s*<h2[\s>]/i.test(parts[0]) ? parts[0] : "";
+  return head + cards.map((c) => `<section class="card">${c}</section>`).join("");
+}
+
 async function generateSummary() {
   if (!requireSubtitle(els.sumBody)) return;
   if (state.sum.loading) return;
@@ -2400,7 +2687,7 @@ async function generateSummary() {
     {
       onDelta(t) {
         state.sum.text += t;
-        mdEl.innerHTML = renderMarkdown(state.sum.text);
+        mdEl.innerHTML = decorateSummary(renderMarkdown(state.sum.text));
         mdEl.classList.add("streaming");
         // 流式时自动跟到底部
         els.sumBody.scrollTop = els.sumBody.scrollHeight;
@@ -2412,7 +2699,7 @@ async function generateSummary() {
         state.sum.sessionId = id;
       },
       onDone(m) {
-        mdEl.innerHTML = renderMarkdown(m.text || state.sum.text);
+        mdEl.innerHTML = decorateSummary(renderMarkdown(m.text || state.sum.text));
         mdEl.classList.remove("streaming");
         state.sum.loading = false;
         if (btn) btn.disabled = false;

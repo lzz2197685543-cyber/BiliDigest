@@ -336,27 +336,104 @@ function switchChatMode(mode) {
 >
 > 同时用 `S.mode === state.chat.mode` 判断是否该更新 DOM，避免把 A 模式的增量画到 B 模式的界面上。
 
+#### 视觉系统：一套令牌撑起所有组件
+
+所有颜色、圆角、过渡都收在 `.wrap` 上的 CSS 变量里，组件规则只引用变量、不写字面值。这样深色模式只需要覆盖令牌，**组件规则一行都不用改**。
+
+| 令牌 | 值 | 用途 |
+|---|---|---|
+| `--pink` | `#fb7299` | 主色：主按钮、选中态、强调 |
+| `--pink-l` | `#fff0f4` | 主色淡底：当前字幕行、用户气泡、code |
+| `--fg` / `--sub` / `--mute` | `#222` / `#71717a` / `#a1a1aa` | 正文 / 次要 / 更弱（时间戳、占位） |
+| `--bg` / `--bg-2` / `--card` | `#fff` / `#f9fafb` / `#fafafa` | 面板底 / 悬停 / 卡片底 |
+| `--code-bg` | `#fff0f4` | 代码与术语标签底 |
+| `--r-sm` / `--r-md` / `--r-xl` | `8px` / `10px` / `12px` | 按钮 / 卡片 / 面板 |
+| `--t` | `all .15s ease` | 所有可交互元素的统一过渡 |
+
+**深色模式**用 `@media (prefers-color-scheme: dark)` 只重定义令牌。Shadow DOM 里的媒体查询照样跟随系统，不需要额外监听：
+
+```css
+@media (prefers-color-scheme: dark) {
+  .wrap { --bg: #18181b; --fg: #e8e8ea; --line: #2c2c33; --pink-l: #3a2029; ... }
+}
+```
+
+少量组件（`.md code` 的字色、`.md mark` 的高亮黄）在浅色下够用、深色下会糊，单独补一个覆盖块。
+
+> 之前有一批 `background: #fff` 硬编码，深色模式下会变成一排刺眼的白块。统一换成 `var(--bg)` 后才可能整体换肤。
+
+#### 分段标签栏
+
+顶部三个标签是**分段控件**（segmented control）而不是下划线标签：浅灰槽 + 选中格浮起成白底。CSS 上就是把 `.tabs` 变成圆角灰底容器、`.tab` 变成 `flex:1` 的格子，`.tab.active::after` 那条下划线 `display:none` 掉——DOM 结构和 `data-tab` 逻辑完全没动。
+
+#### 开关：接管外观，保留原生语义
+
+需求是「不要原生 checkbox」。做法不是换成 `<div>`，而是保留 `<input type="checkbox">` 只把外观整个接管：
+
+```css
+.chk input[type="checkbox"] { appearance: none; width: 30px; height: 17px; border-radius: 999px; }
+.chk input[type="checkbox"]::after { /* 白色圆钮 */ transition: transform .18s var(--ease); }
+.chk input[type="checkbox"]:checked { background: var(--pink); }
+.chk input[type="checkbox"]:checked::after { transform: translateX(13px); }
+```
+
+好处是 JS 读 `.checked` 的代码一行不改，键盘 `Tab` 聚焦、空格切换、读屏播报也全都还在——换成 `<div>` 这些都得手写。
+
+#### 总结分卡片
+
+DeepSeek 的输出是 Markdown，系统提示词固定用 `## 小节` 组织，所以在**渲染出的 HTML 字符串**上切块即可，不用改 DOM 结构：
+
+```js
+const parts = out.split(/(?=<h2[\s>])/i);   // 零宽前瞻，按 h2 切开但不消耗它
+const cards = parts.filter((p) => /^\s*<h2[\s>]/i.test(p));
+return head + cards.map((c) => `<section class="card">${c}</section>`).join("");
+```
+
+两个细节：
+
+- 用**零宽前瞻**切分，`<h2>` 本身留在每个片段开头，否则每张卡片会丢掉标题
+- 第一个片段可能是标题前的内容（比如「字幕质量有限」的提醒），要单独留在卡片外
+- 只要出现第一个 `##` 就立刻成卡，不要等凑够两节——否则流式输出时会先平铺、结束才变卡片，画面会跳一下
+
+时间戳 `[02:15]` 用正则换成 `<button class="ts-tag" data-seek>`，正向处理而不是事后遍历 DOM——流式时每帧都重渲染，遍历 DOM 太贵。**只认方括号包起来的时间**，否则正文里的「3:4 比例」也会被误伤。
+
 #### 按钮视觉规范
 
 参照专业阅读工具，而非营销落地页。核心是「克制、轻量、信息优先」。
 
 | 层级 | 用途 | 样式 |
 |---|---|---|
-| 主操作 | 每屏至多一个（生成总结、发送） | B站红 `#fb7299` 实底、白字 |
+| 主操作 | 每屏至多一个（生成总结、发送） | B站粉 `#fb7299` 实底、白字 |
 | 次操作 | 导出、复制、文件 | 白底 + 1px 细边框、深灰字 |
 | 三级操作 | 新对话等低权重入口 | 纯文字、无边框无底色 |
 
 统一约束：
 
-- **无渐变、无重阴影、无胶囊形**；圆角统一 6px
-- 尺寸紧凑：高度 28px（胶囊 26px、发送键 34px）
+- **面板内的按钮无渐变、无重阴影、无胶囊形**；圆角统一 8px
+- 尺寸紧凑：高度 28px（发送键 34px）
 - 四态齐全：默认 / hover（浅灰底）/ active（更深灰）/ disabled（灰字灰底）
 - 禁用态用**配色**表达而非整体 `opacity`，避免文字发虚
-- `focus-visible` 用 2px B站红描边，只对键盘生效，鼠标点击不出现
+- `focus-visible` 用 2px B站粉描边，只对键盘生效，鼠标点击不出现
+
+> 唯一的例外是收起态的悬浮入口（见下节）：它是浮在页面上的单一行动按钮，允许胶囊形和彩色投影。
 
 > AI 回答不加卡片底色和边框——它是一整块阅读区，加框会把正文压成小色块，视觉噪音大。只有用户提问才用浅粉色块标识。
 
 **窄屏保护**：所有按钮带 `overflow:hidden` + `text-overflow:ellipsis` + `white-space:nowrap`，`max-width:100%`，空间不足时省略而不撑破布局。
+
+#### 悬浮入口按钮
+
+收起态的「字幕」按钮不是普通标签，是这个扩展在页面上的唯一入口，要读起来像「浮起来的 AI 助手」：
+
+- 胶囊形 + 主色纵向渐变（浅 → 深），40px 高
+- 投影用**主色的 rgba** 而不是中性黑——它看起来是被粉色「托着」，而不是盖了一层灰
+- 图标放在半透明白圆底座里，用 `inset 0 0 0 1px` 描一圈，把它从渐变底上分离出来
+- hover：`translateY(-1px) scale(1.03)` + `brightness(1.04)` + 阴影加深，`active` 回弹到 `scale(.98)`
+
+状态点没有丢，改成挂在图标右上角的**角标**：字幕就绪 = 绿点，加载中/无字幕 = 灰点。描边色取按钮底色，看起来是「嵌」进去的而不是贴上去的。
+
+> 注意 `.pill` 必须保留 `overflow:hidden`，否则文字过长会溢出按钮；省略号要靠里面的 `[data-el="pillText"]` 自己带 `text-overflow:ellipsis`。
+
 ### 3.3 面板层 `extension/content.js`
 
 **职责**：所有 UI 与交互，自包含单文件。
