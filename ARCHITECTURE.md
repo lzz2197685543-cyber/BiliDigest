@@ -362,9 +362,77 @@ function switchChatMode(mode) {
 
 > 之前有一批 `background: #fff` 硬编码，深色模式下会变成一排刺眼的白块。统一换成 `var(--bg)` 后才可能整体换肤。
 
+#### 深色标题栏
+
+标题栏在**浅色模式下也是深色**。它承担的是「品牌 + 当前视频上下文」的角色，和下面白色内容区分开，比整块浅色更容易一眼定位。
+
+```css
+.hd {
+  background:
+    radial-gradient(120% 180% at 100% 0%, rgba(139,92,246,.35) 0%, transparent 55%),
+    linear-gradient(135deg, #14161f 0%, #1a1e2c 60%, #1d1a2b 100%);
+}
+```
+
+两层渐变叠加：底子是深蓝黑的对角线渐变，右上角再压一个紫色径向光晕，避免深色块显得死板。底部用 `::after` 画一条 `rgba(255,255,255,.08)` 的高光，而不是边框——深色块和白色内容区直接硬碰会有明显的接缝。
+
+关闭键原本是绝对定位在面板右上角的，改成放进标题栏的 flex 流里并做成圆形描边按钮。因为 `.hd` 是拖动把手，而 `wireLayout` 的 `pointerdown` 会跳过 `BUTTON`，所以点关闭不会被当成拖动。
+
+> 深色模式下标题栏会再压暗一档（`#0c0d13` 起），否则和 `--bg: #18181b` 几乎同色，层次就没了。
+
+#### 时间线卡片字幕列表
+
+字幕区从「一行一行的表格」改成「左侧竖轴 + 右侧卡片」：
+
+- 列表底色压成 `--bg-2`，白色卡片才浮得起来
+- 竖轴用每条自己的 `::before` 画一段，靠 `padding-bottom` 连成连续的一条线
+- 节点用 `::after` 画空心圆，当前播放条填成主色并加一圈光晕
+- 首尾两条要单独处理，否则线头会戳出节点之外：
+
+```css
+.cue:first-child::before { top: 14px; }         /* 从第一个节点开始 */
+.cue:last-child::before  { bottom: auto; height: 14px; }  /* 到最后一个节点结束 */
+```
+
+时间列保持在 34px 左右不放大——它只是定位用的，卡片才是内容主体。
+
+#### 三段式固定底栏
+
+底栏从「左边标签 + 右边说明」改成 `状态 / 来源 / 说明` 三段：
+
+| 位置 | 内容 | 数据来源 |
+|---|---|---|
+| 左 | 圆点 + 已连接 / 加载中 / 未连接 | `setFtState()` |
+| 中 | B站 AI 字幕 / UP主字幕 | `els.srcTag` |
+| 右 | 缓存 / 已加载 / 已总结 | `els.footNote` |
+
+圆点的颜色由父元素的 class 决定（`.ft-state.bad` / `.loading`），所以 `setFtState` 只需要改父节点的 `className` 和文字：
+
+```js
+function setFtState(kind, text) {
+  const box = els.ftState.parentElement;
+  box.className = "ft-state" + (kind && kind !== "ok" ? " " + kind : "");
+  els.ftState.textContent = text;
+}
+```
+
+来源标签原来挂的是 `.tag .ai` 这套徽章样式，现在改成 `.ft-mid .ai`——否则徽章的内边距和底色会跟着带进底栏，把三段布局顶歪。
+
 #### 分段标签栏
 
-顶部三个标签是**分段控件**（segmented control）而不是下划线标签：浅灰槽 + 选中格浮起成白底。CSS 上就是把 `.tabs` 变成圆角灰底容器、`.tab` 变成 `flex:1` 的格子，`.tab.active::after` 那条下划线 `display:none` 掉——DOM 结构和 `data-tab` 逻辑完全没动。
+顶部三个标签是**胶囊分段**：选中项是主色描边胶囊，下面再压一条 3px 的短指示条。
+
+```css
+.tab { padding: 6px 14px; margin-bottom: 9px; border-radius: 999px; }
+.tab.active { background: var(--pink-l); border-color: var(--pink); color: var(--pink); }
+.tab.active::after { position: absolute; left: 10px; right: 10px; bottom: -9px; height: 3px; }
+```
+
+指示条的几何是算出来的，不是试出来的：`.tab` 的下外边距是 9px，`.tabs` 没有下内边距，所以标签盒底部往下 9px 正好是标签栏那条细线的上沿。把 `::after` 的 `bottom` 设成 `-9px`，它的底边就恰好压在这条线上——多一点会被裁掉半截，少一点会浮起来一条缝。
+
+> 试错记录：一开始 `margin-bottom: 8px` 配 `bottom: -9px`，指示条有 1px 越过了细线，截图上看像被切了一刀。把两者对齐后才干净。
+
+聊天页的模式切换（视频 / 普通）也用胶囊圆角，和顶部分段保持同一套语言；但它保留浅灰槽底，避免和上方已经有一条粉色胶囊的标签栏抢注意力。
 
 #### 开关：接管外观，保留原生语义
 

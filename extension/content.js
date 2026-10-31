@@ -389,46 +389,97 @@ const CSS = `
   to   { opacity: 1; transform: none; }
 }
 
-/* 顶栏 */
+/* 顶栏：深色。
+   浅色模式下也保持深色——它承担的是「品牌 + 上下文」的角色，
+   和下面白色的内容区形成明确分层，比整块浅色更容易一眼定位。 */
 .hd {
   display: flex;
   align-items: center;
   gap: 9px;
-  /* 右侧留出关闭键的宽度 + 间距，避免长标题压到按钮下面 */
-  padding: 13px 42px 10px var(--pad);
-  /* 不再画下边框：紧挨着就是标签栏，两条线叠在一起显得碎。
-     分隔交给 .tabs 的下边框，一条线就够。 */
+  padding: 13px 10px 13px var(--pad);
   border-bottom: none;
   flex: 0 0 auto;
-  background: var(--bg);
   min-width: 0;
+  position: relative;
+  background:
+    radial-gradient(120% 180% at 100% 0%, rgba(139,92,246,.35) 0%, rgba(139,92,246,0) 55%),
+    linear-gradient(135deg, #14161f 0%, #1a1e2c 60%, #1d1a2b 100%);
+  color: #fff;
 }
+/* 顶栏底部的细高光，避免深色块和白色内容区直接硬碰 */
+.hd::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: rgba(255,255,255,.08);
+}
+
+/* 品牌图标：圆角方块 + 主色渐变 */
+.logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: #fff;
+  background: linear-gradient(135deg, #fb7299 0%, #f0578a 45%, #8b5cf6 100%);
+  box-shadow: 0 2px 6px -1px rgba(251,114,153,.5), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.logo svg { width: 15px; height: 15px; display: block; }
+
 .hd .t {
   font-size: 14px;
   font-weight: 650;
   letter-spacing: -.1px;
-  color: var(--ink);
-  /* 标题过长时省略，不挤压关闭键 */
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* AI 小徽章 */
+.ai-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  padding: 1.5px 4.5px;
+  border-radius: 4px;
+  background: rgba(251,114,153,.22);
+  color: #ffa8c5;
+  border: 1px solid rgba(251,114,153,.35);
+  line-height: 1.2;
+}
 .hd .meta {
   font-size: 11.5px;
-  color: var(--mute);
+  color: rgba(255,255,255,.62);
   font-weight: 400;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
 }
 
-/* 右上角关闭键：绝对定位，与面板顶/右边缘保持固定间距 */
+/* 关闭键：跟随顶栏的圆形描边按钮 */
 .closebtn {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 2;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.85);
+  font-size: 13px;
 }
-
-/* 窄屏：面板更窄，关闭键间距同步收紧，仍然不压标题 */
+.closebtn:hover {
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.3);
+  color: #fff;
+}
+.closebtn:active { background: rgba(255,255,255,.22); color: #fff; }
+/* 窄屏：面板更窄，工具栏按钮收紧，仍然不压标题 */
 @media (max-width: 520px) {
   .wrap {
     right: 12px;
@@ -442,10 +493,10 @@ const CSS = `
     width: 100%;
     max-width: 100%;
   }
-  .hd { padding-right: 36px; }
-  .closebtn { top: 10px; right: 8px; }
   /* 窄屏优先保证两个开关和输入框，快捷键提示让位 */
   .kbd-hint { display: none; }
+  /* 工具栏按钮在窄屏收窄内边距，给搜索框留出空间 */
+  .tools .btn { padding: 0 11px; }
 }
 
 .iconbtn {
@@ -467,23 +518,24 @@ const CSS = `
 .iconbtn:active { background: var(--bg-3); border-color: var(--line-2); color: var(--fg); }
 .iconbtn:disabled { color: var(--mute); background: none; border-color: transparent; cursor: not-allowed; }
 
-/* 顶部标签：分段胶囊（segmented control）。
-   槽是浅灰底，选中的那一格浮起来变成白底，比下划线更「像可点击的控件」。 */
+/* 顶部标签：胶囊分段。
+   选中项是主色描边胶囊，下面再压一条短指示条——比纯下划线更像「当前选中」，
+   又比灰底分段控件轻，不会在深色顶栏下面再压一块深色。 */
 .tabs {
   display: flex;
-  gap: 3px;
-  margin: 0 var(--pad) 9px;
-  padding: 3px;
-  border-radius: var(--r-md);
-  background: var(--bg-3);
-  border: none;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 9px var(--pad) 0;
+  border-bottom: 1px solid var(--line);
   flex: 0 0 auto;
+  background: var(--bg);
 }
 .tab {
-  flex: 1 1 0;
-  padding: 6px 0;
-  border: none;
-  border-radius: 7px;
+  position: relative;
+  padding: 6px 14px;
+  margin-bottom: 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: transparent;
   font-family: inherit;
   font-size: 12.5px;
@@ -493,23 +545,27 @@ const CSS = `
   white-space: nowrap;
   transition: var(--t);
 }
-.tab:hover { color: var(--fg); background: rgba(255,255,255,.55); }
-.tab:active { background: rgba(255,255,255,.8); }
+.tab:hover { color: var(--fg); background: var(--bg-2); }
+.tab:active { background: var(--bg-3); }
 .tab.active {
-  background: var(--bg);
+  background: var(--pink-l);
+  border-color: var(--pink);
   color: var(--pink);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(16,24,40,.09);
 }
-.tab.active:hover { background: var(--bg); }
-/* 旧的下划线在分段模式里不要了 */
-.tab.active::after { display: none; }
+.tab.active:hover { background: var(--pink-l); }
+/* 选中指示条：贴在标签栏底边上，宽度跟着胶囊走 */
+.tab.active::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -9px;
+  height: 3px;
+  border-radius: 2px 2px 0 0;
+  background: var(--pink);
+}
 .tab:disabled { color: var(--mute); cursor: not-allowed; }
-@media (prefers-color-scheme: dark) {
-  .tab:hover { background: rgba(255,255,255,.06); }
-  .tab.active { box-shadow: 0 1px 2px rgba(0,0,0,.5); }
-}
-
 .pane { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .pane.hidden { display: none; }
 
@@ -517,12 +573,29 @@ const CSS = `
 .tools {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 9px var(--pad);
+  gap: 8px;
+  padding: 10px var(--pad);
   border-bottom: 1px solid var(--line);
   flex: 0 0 auto;
   background: var(--bg);
 }
+/* 工具栏里的按钮比正文里的大一号：这一行是主要操作区 */
+.tools .btn {
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  background: var(--bg-2);
+  border-color: var(--line);
+}
+.tools .btn:hover { background: var(--bg-3); border-color: var(--line-2); }
+.tools .btn:active { background: var(--line); }
+.tools .btn.primary {
+  background: var(--pink);
+  border-color: var(--pink);
+  color: #fff;
+}
+.tools .btn.primary:hover:not(:disabled) { background: var(--pink-d); border-color: var(--pink-d); }
 
 /* 开关（toggle）。仍然是原生 <input type="checkbox">，
    只是把外观整个接管掉——这样 JS 读 .checked 的逻辑一行都不用改，
@@ -624,6 +697,7 @@ const CSS = `
 /* ---------- 正文排版 ---------- */
 /* 注意选择器要写成 .body.xxx：单纯 .sum-body 会被后面的 .body 规则覆盖掉 */
 .body.sum-body, .body.chat-body { padding: 12px var(--pad) 14px; }
+.pane-chat > .body { background: var(--bg-2); }
 
 .md { font-size: 13.5px; line-height: 1.78; word-break: break-word; color: var(--fg); }
 .md h1, .md h2, .md h3 {
@@ -709,15 +783,19 @@ const CSS = `
   background: var(--pink-l);
   color: var(--fg);
   border: 1px solid var(--pink-b);
-  border-radius: var(--r-md);
-  border-bottom-right-radius: 3px;
+  border-radius: var(--r-lg);
+  border-bottom-right-radius: 4px;
 }
 /* AI 回答：正文形态，无底色无边框 */
 .msg.ai .bubble {
-  background: none;
+  background: var(--bg);
   color: var(--fg);
-  border: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 11px 13px;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04);
 }
+.msg.ai .bubble.md { background: var(--bg); }
 .msg .bubble.md { white-space: normal; }
 .msg.ai .bubble.md { background: none; }
 
@@ -739,7 +817,7 @@ const CSS = `
   display: inline-flex;
   padding: 3px;
   gap: 3px;
-  border-radius: var(--r-md);
+  border-radius: 999px;
   background: var(--bg-3);
   border: none;
 }
@@ -751,8 +829,8 @@ const CSS = `
   font-size: 12px;
   font-weight: 500;
   color: var(--sub);
-  padding: 4px 11px;
-  border-radius: 7px;
+  padding: 4px 12px;
+  border-radius: 999px;
   white-space: nowrap;
   transition: background-color .13s var(--ease), color .13s var(--ease),
               border-color .13s var(--ease);
@@ -794,10 +872,10 @@ const CSS = `
   font-size: 12px;
   font-weight: 400;
   cursor: pointer;
-  height: 34px;
-  padding: 0 10px;
+  height: 40px;
+  padding: 0 12px;
   border: 1px solid var(--line-2);
-  border-radius: var(--r-sm);
+  border-radius: 14px;
   background: var(--bg);
   white-space: nowrap;
   transition: var(--t);
@@ -807,12 +885,12 @@ const CSS = `
 
 .chat-input {
   flex: 1;
-  min-height: 36px;
-  max-height: 104px;
-  padding: 8px 11px;
+  min-height: 40px;
+  max-height: 108px;
+  padding: 10px 14px;
   border: 1px solid var(--line-2);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
+  border-radius: 14px;
+  background: var(--bg);
   font-family: inherit;
   font-size: 13.5px;
   line-height: 1.55;
@@ -946,15 +1024,19 @@ const CSS = `
 
 /* 发送键：方形微圆角，与输入框同高，不做圆形胶囊 */
 .btn.send-btn {
-  min-width: 52px;
-  height: 34px;
-  padding: 0 12px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0;
   flex: 0 0 auto;
-  border-radius: var(--r-sm);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 3px 10px -2px rgba(251,114,153,.45);
 }
+.btn.send-btn svg { width: 18px; height: 18px; display: block; }
+.btn.send-btn:hover:not(:disabled) { box-shadow: 0 4px 14px -2px rgba(251,114,153,.55); }
+.btn.send-btn:disabled { box-shadow: none; }
 
 /* ---------- 附件 ---------- */
 .attaches {
@@ -1112,29 +1194,31 @@ const CSS = `
 }
 .search-ic {
   position: absolute;
-  left: 9px;
-  width: 14px;
-  height: 14px;
+  left: 13px;
+  width: 15px;
+  height: 15px;
   color: var(--mute);
   pointer-events: none;
   transition: color .15s ease;
 }
 .search-wrap:focus-within .search-ic { color: var(--pink); }
 
+/* 胶囊输入框 */
 .search {
   flex: 1;
-  height: 32px;
-  padding: 0 10px 0 29px;
+  height: 38px;
+  padding: 0 14px 0 36px;
   min-width: 0;
   border: 1px solid var(--line-2);
-  border-radius: var(--r-sm);
+  border-radius: 999px;
   background: var(--bg-2);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--fg);
   outline: none;
-  transition: border-color .13s var(--ease), background-color .13s var(--ease);
+  transition: var(--t);
 }
+.search:hover { border-color: var(--line-3); }
 .search::placeholder { color: var(--mute); }
 .search:focus {
   border-color: var(--pink);
@@ -1161,35 +1245,101 @@ const CSS = `
 }
 .body::-webkit-scrollbar-thumb:hover { background: #c3c8d0; background-clip: padding-box; }
 
-/* ---------- 字幕行 ---------- */
-.cue {
-  display: flex;
-  gap: 9px;
-  padding: 6px var(--pad) 6px calc(var(--pad) - 2.5px);
-  border-left: 2.5px solid transparent;
-  cursor: pointer;
-  transition: background .13s var(--ease), border-color .13s var(--ease);
+/* ---------- 字幕列表：时间线卡片 ----------
+   左侧一条竖轴 + 节点，右侧是每条字幕的卡片。
+   列表底色压成浅灰，白色卡片才浮得起来；这是和原面板最大的视觉差别。 */
+.pane-sub > .body {
+  background: var(--bg-2);
+  padding: 12px var(--pad) 14px;
 }
-.cue:hover { background: var(--bg-2); border-left-color: var(--line-2); }
-.cue.active { background: var(--pink-l); border-left-color: var(--pink); }
+
+.cue {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  padding: 0 0 10px 22px;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+/* 竖轴：每一条自己画一段，靠 padding-bottom 连成一条不断的线 */
+.cue::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: var(--line-2);
+}
+.cue:first-child::before { top: 14px; }
+.cue:last-child::before { bottom: auto; height: 14px; }
+
+/* 节点：空心圆，当前条填充主色 */
+.cue::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 1.5px var(--line-3);
+  transition: var(--t);
+}
+
+/* 时间列：保持窄，只做定位用 */
 .cue .ts {
   flex: 0 0 auto;
+  min-width: 34px;
   font-size: 11px;
   color: var(--mute);
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  padding-top: 2px;
-  min-width: 34px;
+  padding-top: 11px;
+  transition: var(--t);
+}
+
+/* 文字卡片 */
+.cue .tx {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-word;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04);
+  transition: var(--t);
+}
+
+.cue:hover .tx {
+  border-color: var(--line-2);
+  box-shadow: 0 2px 8px -2px rgba(16,24,40,.1);
+}
+.cue:hover::after { box-shadow: inset 0 0 0 1.5px var(--pink); }
+
+.cue.active .tx {
+  background: var(--pink-l);
+  border-color: var(--pink);
+  box-shadow: 0 2px 10px -2px rgba(251,114,153,.35);
 }
 .cue.active .ts { color: var(--pink); font-weight: 600; }
-.cue .tx { flex: 1; font-size: 13px; word-break: break-word; line-height: 1.6; }
+.cue.active::after {
+  background: var(--pink);
+  box-shadow: 0 0 0 3px rgba(251,114,153,.22);
+}
+
 .cue .tx mark {
   background: #fef08a;
   color: inherit;
   padding: 0 1.5px;
   border-radius: 2px;
 }
-
 /* ---------- 空状态 / 错误 ---------- */
 .state {
   padding: 40px var(--pad);
@@ -1220,17 +1370,60 @@ const CSS = `
   flex-wrap: wrap;
 }
 
-/* ---------- 底栏 ---------- */
+/* ---------- 底栏 ----------
+   三段式：左「连接状态」、中「字幕来源」、右「同步/缓存说明」。
+   它是独立固定的一行，不跟着内容滚走。 */
 .ft {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px var(--pad);
+  gap: 10px;
+  padding: 9px var(--pad);
   border-top: 1px solid var(--line);
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--mute);
-  background: var(--bg-2);
+  background: var(--bg);
+}
+.ft-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.ft-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(16,185,129,.14);
+  transition: var(--t);
+  flex: 0 0 auto;
+}
+.ft-state.loading .ft-dot {
+  background: var(--line-3);
+  box-shadow: 0 0 0 3px rgba(161,161,170,.14);
+}
+.ft-state.bad .ft-dot {
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239,68,68,.14);
+}
+.ft-mid {
+  flex: 1 1 auto;
+  text-align: center;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ft-mid.ai { color: var(--pink-dd); }
+.ft-mid.ok { color: #15803d; }
+.ft-note {
+  flex: 0 0 auto;
+  color: var(--mute);
+  white-space: nowrap;
 }
 .ft .sp { flex: 1; }
 .tag {
@@ -1254,6 +1447,11 @@ const CSS = `
 /* ---------- 深色模式：组件级覆盖 ---------- */
 @media (prefers-color-scheme: dark) {
   .panel { outline: 1px solid rgba(255,255,255,.06); }
+  .hd {
+    background:
+      radial-gradient(120% 180% at 100% 0%, rgba(139,92,246,.28) 0%, rgba(139,92,246,0) 55%),
+      linear-gradient(135deg, #0c0d13 0%, #12141d 60%, #16121f 100%);
+  }
   .tag.ok { background: #14361f; color: #4ade80; }
   .tag.ai { background: #3a2029; color: #f9a8c4; }
   .md mark { background: #5a4a10; color: #fde68a; }
@@ -1464,12 +1662,20 @@ function build() {
   wrap.innerHTML = `
     <div class="panel hidden" part="panel">
       <div class="hd">
-        <div class="t">BiliDigest <span class="meta"></span></div>
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-3.9-.9L3 21l1.9-4.9A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"></path>
+            <path d="M9 10.5v3"></path>
+            <path d="M12 9v6"></path>
+            <path d="M15 10.5v3"></path>
+          </svg>
+        </span>
+        <span class="t">BiliDigest<span class="ai-badge">AI</span></span>
+        <span class="sp"></span>
+        <span class="meta"></span>
+        <button class="iconbtn closebtn" data-act="collapse" title="收起面板" aria-label="收起面板">✕</button>
       </div>
-
-      <!-- 关闭键绝对定位在面板右上角，不参与头部流式布局，
-           标题再长也不会把它挤走，它也不会盖住标题 -->
-      <button class="iconbtn closebtn" data-act="collapse" title="收起面板" aria-label="收起面板">✕</button>
 
       <div class="tabs">
         <button class="tab active" data-tab="sub">字幕</button>
@@ -1532,15 +1738,24 @@ function build() {
             <label class="chk file-label" title="上传文件（单个上限 20MB）">
               <input type="file" class="c-file" multiple hidden /> 📎 文件
             </label>
-            <button class="btn primary send-btn" data-act="send" title="发送（Enter）">发送</button>
+            <button class="btn primary send-btn" data-act="send" title="发送（Enter）" aria-label="发送">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 19V5"></path>
+                <path d="M5.5 11.5L12 5l6.5 6.5"></path>
+              </svg>
+            </button>
           </div>
         </div>
       </div>
 
       <div class="ft">
-        <span class="tag" data-el="srcTag"></span>
-        <span class="sp"></span>
-        <span data-el="footNote"></span>
+        <span class="ft-state">
+          <span class="ft-dot"></span>
+          <span data-el="ftState">加载中</span>
+        </span>
+        <span class="ft-mid" data-el="srcTag"></span>
+        <span class="ft-note" data-el="footNote"></span>
       </div>
 
       <!-- 右下角拖拽柄：按住可自由调整面板宽高 -->
@@ -1573,6 +1788,7 @@ function build() {
     body: wrap.querySelector(".pane-sub .body"),
     search: wrap.querySelector(".search"),
     srcTag: wrap.querySelector('[data-el="srcTag"]'),
+  ftState: wrap.querySelector('[data-el="ftState"]'),
     footNote: wrap.querySelector('[data-el="footNote"]'),
     tabs: [...wrap.querySelectorAll(".tab")],
     panes: {
@@ -2266,6 +2482,7 @@ async function loadSubtitle(url, force = false) {
   state.loading = true;
   state.error = "";
   setPill("加载字幕…", false, true);
+  setFtState("loading", "加载中");
 
   const r = await send("SUBTITLES", { url, force });
   state.loading = false;
@@ -2273,6 +2490,7 @@ async function loadSubtitle(url, force = false) {
   if (!r.ok) {
     state.data = { ok: false, reason: r.error || "请求失败" };
     setPill("字幕获取失败", true);
+    setFtState("bad", "未连接");
     renderFailure();
     return;
   }
@@ -2289,8 +2507,9 @@ async function loadSubtitle(url, force = false) {
     setPill("字幕", false);
     els.meta.textContent = `${fmtClock(d.page.duration)} · P${d.page.index}`;
     els.srcTag.textContent = isAi ? "B站 AI 字幕" : "UP主字幕";
-    els.srcTag.className = "tag " + (isAi ? "ai" : "ok");
+    els.srcTag.className = "ft-mid " + (isAi ? "ai" : "ok");
     els.footNote.textContent = r.data.fromCache ? "缓存" : "已加载";
+    setFtState("ok", "已连接");
     renderCues();
     if (state.expanded) els.panel.classList.remove("hidden");
   } else {
@@ -2339,7 +2558,7 @@ function renderFailure() {
   }
   els.meta.textContent = "";
   els.srcTag.textContent = "";
-  els.srcTag.className = "tag";
+  els.srcTag.className = "ft-mid";
   els.footNote.textContent = "";
 }
 
@@ -2354,6 +2573,13 @@ function parseTs(s) {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 }
 
+/** 底栏左侧的连接状态：ok / loading / bad */
+function setFtState(kind, text) {
+  if (!els.ftState) return;
+  const box = els.ftState.parentElement;
+  if (box) box.className = "ft-state" + (kind && kind !== "ok" ? " " + kind : "");
+  els.ftState.textContent = text;
+}
 function seekTo(sec) {
   const v = document.querySelector("video");
   if (v) {
@@ -3144,9 +3370,10 @@ async function syncRoute() {
   renderAttaches();
   els.meta.textContent = "";
   els.srcTag.textContent = "";
-  els.srcTag.className = "tag";
+  els.srcTag.className = "ft-mid";
   els.footNote.textContent = "";
   setPill("加载字幕…", false, true);
+  setFtState("loading", "加载中");
   await loadSubtitle(url);
 }
 
