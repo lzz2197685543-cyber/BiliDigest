@@ -1082,6 +1082,12 @@ let panelOpenGetter = null;
 let composingUntil = 0;
 
 function handleComposerKey(e) {
+  // ⚠️ 只处理 keydown。
+  // onGlobalKeyCapture 同时挂在 keydown / keyup / keypress 上，
+  // 而 keyup 的 e.key 同样是 "Enter"——不拦的话按一次键会发送两次。
+  // 注意 __bdHandled 拦不住这种情况：keydown 和 keyup 是两个不同的事件对象。
+  if (e.type !== "keydown") return;
+
   if (e.__bdHandled) return;          // 防止两条路径都触发导致重复发送
   if (e.key !== "Enter") return;
   if (!els || !els.chatInput) return;
@@ -2028,11 +2034,32 @@ async function copySummary() {
 
 /* ---------------- 聊天 ---------------- */
 
+/**
+ * 发送门闩。
+ *
+ * sendChat 内部有 await（校验登录态、拼字幕），在 await 期间
+ * `cs().sending` 还没置位。如果此时又来一次触发（Enter 的 keydown+keyup、
+ * 或者用户连点发送键），两次调用都能通过检查，结果发出两条消息。
+ *
+ * 所以用一个同步的模块级标志位，在进入异步流程前就把门关上。
+ */
+let sendLock = false;
+
 async function sendChat() {
   const text = els.chatInput.value.trim();
   if (!text) return;
-  if (cs().sending) return;
+  if (sendLock || cs().sending) return;
 
+  sendLock = true;
+  try {
+    await sendChatInner(text);
+  } finally {
+    // 无论成功、失败还是抛异常，都要开门，否则输入框会一直发不出去
+    sendLock = false;
+  }
+}
+
+async function sendChatInner(text) {
   const isVideo = state.chat.mode === "video";
 
   // 视频模式必须有字幕；普通模式不需要

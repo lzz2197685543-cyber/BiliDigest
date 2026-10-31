@@ -502,6 +502,55 @@ function onGlobalKeyCapture(e) {
 
 > 调试教训：用 `new KeyboardEvent(...)` 在 CDP 里派发事件时，`composed` 默认是 `false`，事件不会经过 window，导致测试**假通过**。复现真实情况必须显式写 `composed: true`。
 
+#### ⚠️ 必须知道的坑：按一次 Enter 发出两条消息
+
+把 Enter 的处理挂到 window capture 之后，用户反馈「发两条」。
+
+原因：`onGlobalKeyCapture` 同时注册在三个事件上：
+
+```js
+window.addEventListener("keydown", onGlobalKeyCapture, { capture: true });
+window.addEventListener("keyup",   onGlobalKeyCapture, { capture: true });
+window.addEventListener("keypress", onGlobalKeyCapture, { capture: true });
+```
+
+而 **`keyup` 的 `e.key` 同样是 `"Enter"`**。于是：
+
+- `keydown` → 发送
+- `keyup`   → 又发送一次
+
+> `preventDefault()` 能取消 `keypress`，但**取消不了 `keyup`**——`keyup` 一定会发。
+
+事件对象上的去重标志（`e.__bdHandled`）也拦不住：`keydown` 和 `keyup` 是**两个不同的对象**。
+
+修法是在处理器最前面按事件类型过滤：
+
+```js
+function handleComposerKey(e) {
+  if (e.type !== "keydown") return;   // ← 关键
+  ...
+}
+```
+
+**第二层防护：发送锁**
+
+`sendChat` 内部有 `await checkDsLogin()`，在 await 期间 `cs().sending` 还没置位。此时第二次触发同样能通过 `sending` 检查。所以需要一个**同步**的模块级门闩：
+
+```js
+let sendLock = false;
+
+async function sendChat() {
+  const text = els.chatInput.value.trim();
+  if (!text) return;
+  if (sendLock || cs().sending) return;
+  sendLock = true;
+  try { await sendChatInner(text); }
+  finally { sendLock = false; }   // 失败/异常也要开门，否则再也发不出去
+}
+```
+
+实测四种情形：完整 keydown+keypress+keyup = 1 条；仅 keyup = 0；连按三次 = 1；Shift+Enter = 0。
+
 #### 输入框按键与中文输入法
 
 ```js
