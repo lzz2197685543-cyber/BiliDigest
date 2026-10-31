@@ -1037,6 +1037,42 @@ const CSS = `
 .sp { flex: 1; }
 .hidden { display: none !important; }
 
+/* ---------- 面板拖拽与缩放 ---------- */
+
+/* 标题栏是拖动把手。用 grab 光标明确「这里可以抓」 */
+.hd { cursor: grab; }
+.wrap.dragging .hd { cursor: grabbing; }
+
+/* 拖动过程中禁止选中文本，否则会拖出一片蓝色选区 */
+.wrap.dragging { user-select: none; -webkit-user-select: none; }
+.wrap.dragging iframe { pointer-events: none; }
+
+/* 右下角缩放柄。做得克制：默认几乎不可见，悬停才显形 */
+.resizer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  z-index: 3;
+  cursor: nwse-resize;
+  /* 扩大命中区但不遮住底部文字 */
+  border-bottom-right-radius: var(--r-xl);
+}
+.resizer::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--line-3);
+  border-bottom: 1.5px solid var(--line-3);
+  transition: border-color .15s var(--ease);
+}
+.resizer:hover::after,
+.wrap.dragging .resizer::after { border-color: var(--pink); }
+
 `;
 
 // ---------------------------------------------------------------------------
@@ -1267,6 +1303,9 @@ function build() {
         <span class="sp"></span>
         <span data-el="footNote"></span>
       </div>
+
+      <!-- 右下角拖拽柄：按住可自由调整面板宽高 -->
+      <div class="resizer" data-el="resizer" title="拖拽调整大小（双击恢复默认）"></div>
     </div>
     <button class="pill" data-act="toggle"><span class="dot"></span><span data-el="pillText">加载字幕…</span></button>
   `;
@@ -1275,6 +1314,8 @@ function build() {
   els = {
     wrap,
     panel: wrap.querySelector(".panel"),
+    hd: wrap.querySelector(".hd"),
+    resizer: wrap.querySelector(".resizer"),
     pill: wrap.querySelector(".pill"),
     pillText: wrap.querySelector('[data-el="pillText"]'),
     meta: wrap.querySelector(".hd .meta"),
@@ -1495,10 +1536,222 @@ function onPanelClick(e) {
 // 渲染
 // ---------------------------------------------------------------------------
 
+/* ---------------- 面板布局：拖动 + 缩放 ---------------- */
+
+/**
+ * 默认（layout === null）沿用 CSS：468px 宽、78vh 高、锚定右下角。
+ *
+ * 一旦用户拖动或缩放，就切换成像素定位并把结果存进 chrome.storage.local。
+ * 之所以不一开始就用像素：78vh 会跟着窗口高度自适应，把默认值固化成
+ * 像素反而丢掉了这个好处。
+ */
+const LAYOUT_KEY = "layout:v1";
+const LAYOUT_MIN_W = 360;
+const LAYOUT_MIN_H = 340;
+const LAYOUT_EDGE = 8;      // 与视口边缘至少留出的距离
+
+let layout = null;
+let dragState = null;
+let layoutSaveTimer = null;
+
+/**
+ * 约束顺序很重要：先把尺寸定死，再收位置。
+ *
+ * 反过来的话会出问题：位置先被限制在 vw-120，随后尺寸被最小值
+ * 顶到 360，两者叠在一起就把面板推出了视口右边（实测 560 宽视口下
+ * 面板右边缘跑到 666）。
+ */
+function clampLayout(L) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  // 视口比最小尺寸还小时，让步给视口，否则必然溢出
+  const maxW = Math.max(240, vw - LAYOUT_EDGE * 2);
+  const maxH = Math.max(200, vh - LAYOUT_EDGE * 2);
+
+  let width = Math.min(Math.round(L.width), maxW);
+  let height = Math.min(Math.round(L.height), maxH);
+  width = Math.max(width, Math.min(LAYOUT_MIN_W, maxW));
+  height = Math.max(height, Math.min(LAYOUT_MIN_H, maxH));
+
+  // 尺寸确定后，把面板整体收进视口
+  let left = Math.round(L.left);
+  let top = Math.round(L.top);
+  left = Math.min(Math.max(left, LAYOUT_EDGE), vw - width - LAYOUT_EDGE);
+  top = Math.min(Math.max(top, LAYOUT_EDGE), vh - height - LAYOUT_EDGE);
+
+  return { left, top, width, height };
+}
+
+function applyLayout() {
+  if (!els || !els.panel) return;
+  const open = !els.panel.classList.contains("hidden");
+
+  // 收起状态或没有自定义布局 → 退回 CSS 默认（胶囊仍贴在右下角）
+  if (!layout || !open) {
+    els.wrap.style.left = "";
+    els.wrap.style.top = "";
+    els.wrap.style.right = "";
+    els.wrap.style.bottom = "";
+    els.panel.style.width = "";
+    els.panel.style.height = "";
+    // 默认态的上下限由 CSS 管，这里必须清掉，否则拖大之后复位会失效
+    els.panel.style.maxWidth = "";
+    els.panel.style.maxHeight = "";
+    els.panel.style.minHeight = "";
+    return;
+  }
+
+  els.wrap.style.right = "auto";
+  els.wrap.style.bottom = "auto";
+  // 每次套用前重新校验：窗口可能比上次保存时小得多（换显示器、改缩放）
+  layout = clampLayout(layout);
+  els.wrap.style.left = layout.left + "px";
+  els.wrap.style.top = layout.top + "px";
+  els.panel.style.width = layout.width + "px";
+  els.panel.style.height = layout.height + "px";
+  // CSS 里的 max-height: 760px / min-height: 340px 是给默认态用的，
+  // 不解除的话用户永远拖不出 760px 以上，等于白拖。
+  els.panel.style.maxWidth = "none";
+  els.panel.style.maxHeight = "none";
+  els.panel.style.minHeight = "0";
+}
+
+function setLayout(next) {
+  layout = clampLayout(next);
+  applyLayout();
+}
+
+/** 把面板当前的实际几何固化成像素，作为拖动起点 */
+function grabLayout() {
+  const r = els.panel.getBoundingClientRect();
+  // 宽高用 offset* 而不是 rect：开合动画带 transform: scale(.985)，
+  // rect 读到的是变换后的视觉尺寸，会把 468 记成 461。
+  return {
+    left: r.left,
+    top: r.top,
+    width: els.panel.offsetWidth,
+    height: els.panel.offsetHeight,
+  };
+}
+
+function scheduleLayoutSave() {
+  clearTimeout(layoutSaveTimer);
+  layoutSaveTimer = setTimeout(() => {
+    try { chrome.storage.local.set({ [LAYOUT_KEY]: layout }); } catch (e) { /* 存不了就算了 */ }
+  }, 250);
+}
+
+function loadLayout() {
+  try {
+    chrome.storage.local.get(LAYOUT_KEY, (o) => {
+      const L = o && o[LAYOUT_KEY];
+      if (L && typeof L.width === "number" && typeof L.height === "number") {
+        layout = clampLayout(L);
+        applyLayout();
+      }
+    });
+  } catch (e) { /* 读不到就用默认 */ }
+}
+
+function beginDrag(mode, e) {
+  if (e.button !== 0) return;
+
+  layout = clampLayout(grabLayout());
+  dragState = {
+    mode,
+    x: e.clientX,
+    y: e.clientY,
+    left: layout.left,
+    top: layout.top,
+    width: layout.width,
+    height: layout.height,
+  };
+
+  els.wrap.classList.add("dragging");
+  applyLayout();
+
+  window.addEventListener("pointermove", onDragMove, true);
+  window.addEventListener("pointerup", onDragEnd, true);
+  window.addEventListener("pointercancel", onDragEnd, true);
+
+  // 必须在捕获阶段掐断：否则 B 站播放器会同时收到这次按下，
+  // 拖面板的过程中视频进度条也跟着动。
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function onDragMove(e) {
+  if (!dragState) return;
+  const dx = e.clientX - dragState.x;
+  const dy = e.clientY - dragState.y;
+
+  if (dragState.mode === "move") {
+    setLayout({
+      left: dragState.left + dx,
+      top: dragState.top + dy,
+      width: dragState.width,
+      height: dragState.height,
+    });
+  } else {
+    setLayout({
+      left: dragState.left,
+      top: dragState.top,
+      width: dragState.width + dx,
+      height: dragState.height + dy,
+    });
+  }
+
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function onDragEnd(e) {
+  if (!dragState) return;
+  dragState = null;
+  els.wrap.classList.remove("dragging");
+  window.removeEventListener("pointermove", onDragMove, true);
+  window.removeEventListener("pointerup", onDragEnd, true);
+  window.removeEventListener("pointercancel", onDragEnd, true);
+  scheduleLayoutSave();
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+}
+
+function resetLayout() {
+  layout = null;
+  applyLayout();
+  try { chrome.storage.local.remove(LAYOUT_KEY); } catch (e) { /* ignore */ }
+}
+
+function wireLayout() {
+  // 标题栏拖动。按钮/输入框等交互元素不参与拖动。
+  els.hd.addEventListener("pointerdown", (e) => {
+    const path = e.composedPath ? e.composedPath() : [];
+    if (path.some((n) => n && /^(BUTTON|INPUT|TEXTAREA|A|SELECT|LABEL)$/.test(n.tagName || ""))) return;
+    beginDrag("move", e);
+  });
+
+  // 右下角缩放
+  els.resizer.addEventListener("pointerdown", (e) => beginDrag("resize", e));
+
+  // 双击复位
+  els.hd.addEventListener("dblclick", () => resetLayout());
+  els.resizer.addEventListener("dblclick", () => resetLayout());
+
+  // 窗口尺寸变化时把面板拉回可视范围（比如从扩展屏拔掉外接显示器）
+  window.addEventListener("resize", () => {
+    if (!layout) return;
+    layout = clampLayout(layout);
+    applyLayout();
+    scheduleLayoutSave();
+  });
+}
+
 function toggle(force) {
   state.expanded = force === undefined ? !state.expanded : Boolean(force);
   els.panel.classList.toggle("hidden", !state.expanded);
   els.pill.classList.toggle("hidden", state.expanded);
+  applyLayout();          // 展开时套用记忆的尺寸/位置，收起时退回右下角
   if (state.expanded) {
     if (!state.data) loadSubtitle(state.url);
     renderCues();
@@ -2481,6 +2734,9 @@ function init() {
     document.getElementById(HOST_ID),
     () => state.expanded
   );
+  // 拖动/缩放：先接线，再读记忆的布局
+  wireLayout();
+  loadLayout();
   attachDebugHook();
   state.url = location.href;
   loadSubtitle(state.url);

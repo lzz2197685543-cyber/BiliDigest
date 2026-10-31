@@ -551,6 +551,43 @@ async function sendChat() {
 
 实测四种情形：完整 keydown+keypress+keyup = 1 条；仅 keyup = 0；连按三次 = 1；Shift+Enter = 0。
 
+#### 面板拖动与缩放
+
+面板默认用 CSS 定位（`width:468px`、`height:78vh`、锚定右下角）。用户开始拖动或缩放时，才切换成像素定位，并把结果写进 `chrome.storage.local` 的 `layout:v1`。
+
+**为什么不一开始就用像素**：`78vh` 会跟着窗口高度自适应，一上来就固化成像素反而丢掉了这个好处。所以 `layout === null` 代表「用 CSS 默认」，只有用户真正调过之后才变成具体像素。
+
+拖动时 `layout` 的取值顺序也有讲究：**先把尺寸定死，再收位置**。
+
+```js
+// 正确顺序
+width  = clamp(L.width);   // 先定尺寸
+left   = clamp(L.left, 0, vw - width - 8);   // 再收位置
+```
+
+反过来写会出事：位置先被限制在 `vw - 120`，随后尺寸又被最小值顶到 360px，两者叠加就把面板推出了视口右边——实测 560px 宽的视口下，面板右边缘跑到了 666px。
+
+**三个容易踩的点**：
+
+1. **`max-height` 会把内联 `height` 压回去**
+   CSS 里写着 `max-height: 760px`，直接设 `style.height = "802px"` 不生效，因为 `max-height` 是独立属性。自定义尺寸时要一并解除：
+
+   ```js
+   panel.style.maxWidth = "none";
+   panel.style.maxHeight = "none";
+   panel.style.minHeight = "0";
+   ```
+
+   复位时记得清空，否则默认态就再也回不到 78vh。
+
+2. **`getBoundingClientRect()` 读到的是变换后的尺寸**
+   开合动画 `panelIn` 带 `transform: scale(.985)`。如果动画被冻结（后台标签页会这样），`rect.width` 会返回 461 而不是 468——存进去的尺寸就少了 7px。所以宽高用 `offsetWidth/offsetHeight`（不受 transform 影响），只有位置用 `rect`。
+
+3. **`Emulation.setDeviceMetricsOverride` 不派发 `resize`**
+   这只影响自动化测试。但也提醒了一件事：面板每次展开都应该重新 `clampLayout`，因为窗口可能在收起期间变小了（拔掉外接显示器、改系统缩放）。所以 `applyLayout()` 里有一句 `layout = clampLayout(layout)`。
+
+拖动用的是 pointer events，并在捕获阶段 `preventDefault + stopPropagation`——否则 B站播放器会同时收到这次按下，拖面板的过程中视频进度条也跟着动。
+
 #### 输入框按键与中文输入法
 
 ```js
