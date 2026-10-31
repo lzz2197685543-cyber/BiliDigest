@@ -721,15 +721,79 @@ const CSS = `
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color: var(--pink-dd);
 }
-.md pre {
-  background: var(--bg-2);
-  border: 1px solid var(--line);
+/* 代码块：深色卡片 + 语言条 + 复制键。
+   DeepSeek 的回答里代码占比很高，用浅色底会和平铺的段落糊在一起。 */
+.code {
+  margin: 0 0 10px;
   border-radius: var(--r-md);
-  padding: 10px 12px;
-  overflow-x: auto;
-  margin: 0 0 9px;
+  overflow: hidden;
+  background: #1b1b21;
+  border: 1px solid rgba(0,0,0,.1);
 }
-.md pre code { background: none; padding: 0; color: var(--fg); }
+.code-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,.045);
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.code-lang {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.5);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.code-copy {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,.6);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: var(--t);
+}
+.code-copy:hover { background: rgba(255,255,255,.13); color: #fff; }
+.code-copy:active { background: rgba(255,255,255,.2); }
+.code pre {
+  margin: 0;
+  padding: 11px 12px;
+  overflow-x: auto;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+.code code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  color: #e4e4e9;
+  font-size: 12px;
+  line-height: 1.65;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  white-space: pre;
+}
+.code pre::-webkit-scrollbar { height: 7px; }
+.code pre::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 4px; }
+
+/* 表格 */
+.md-table { overflow-x: auto; margin: 0 0 10px; border-radius: var(--r-sm); }
+.md table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.md th, .md td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  vertical-align: top;
+}
+.md th { background: var(--bg-2); font-weight: 600; color: var(--ink); white-space: nowrap; }
+.md tbody tr:nth-child(even) { background: var(--bg-2); }
+
+/* 嵌套列表收紧一点，否则两层之间的空隙太大 */
+.md li > ul, .md li > ol { margin: 3px 0 2px; }
 .md strong { font-weight: 650; color: var(--ink); }
 .md blockquote {
   margin: 0 0 9px;
@@ -803,6 +867,40 @@ const CSS = `
 .msg.ai .bubble.md > *:first-child { margin-top: 0; }
 .msg.ai .bubble.md > *:last-child { margin-bottom: 0; }
 
+/* ---------- AI 回答的操作栏 ----------
+   默认半透明，悬停这一条时才完全显现，避免每段回答下面都挂一排按钮。 */
+.msg.ai {
+  flex-direction: column;
+  align-items: stretch;
+}
+.msg-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 7px;
+  opacity: .55;
+  transition: opacity .15s ease;
+}
+.msg.ai:hover .msg-actions,
+.msg-actions:focus-within { opacity: 1; }
+.act-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--sub);
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: var(--t);
+}
+.act-btn:hover { background: var(--bg-2); border-color: var(--line-2); color: var(--fg); }
+.act-btn:active { background: var(--bg-3); }
+.act-btn svg { width: 12px; height: 12px; flex: 0 0 auto; }
+.act-btn:focus-visible { outline: 2px solid var(--pink); outline-offset: 1px; }
 /* ---------- 聊天：模式栏 ---------- */
 .chatbar {
   display: flex;
@@ -1986,6 +2084,8 @@ function onPanelClick(e) {
     else if (act === "retry") loadSubtitle(state.url, true);
     else if (act === "do-sum") generateSummary();
     else if (act === "copy-sum") copySummary();
+    else if (act === "copy-msg") copyMsg(actEl);
+    else if (act === "copy-code") copyCode(actEl);
     else if (act === "send") sendChat();
     else if (act === "new-chat") newChat();
     else if (act === "rm-file") {
@@ -2743,50 +2843,193 @@ ${lines.join("\n")}`;
 }
 
 /** 极简 Markdown → HTML（只处理标题、粗体、列表、代码、段落） */
+/* ---------------- Markdown 渲染 ----------------
+ *
+ * 自己写而不引库：这是免构建的 content script，引 markdown-it 要多背 100KB，
+ * 而这里真正需要支持的语法就那几种。
+ *
+ * 处理顺序是关键：
+ *   1. 先把围栏代码块整块摘出来——否则里面的 ** 和 # 会被当成格式吃掉
+ *   2. 行内代码同理，先换成占位符，最后再放回来
+ *   3. 逐行做块级解析（标题/列表/引用/表格/段落）
+ *   4. 块内文本统一 escapeHtml 后再做行内格式，避免 XSS
+ */
+
+const MD_PH = "\uE000";   // 私有区字符，正文里不会出现
+
+/** 行内格式：代码 → 链接 → 粗体 → 斜体。入参必须已经 escape 过 */
+function mdInline(escaped) {
+  const codes = [];
+  let s = String(escaped).replace(/`([^`\n]+)`/g, (_, c) => {
+    codes.push(c);
+    return `${MD_PH}${codes.length - 1}${MD_PH}`;
+  });
+
+  // 链接只放行 http(s) / mailto，其余降级成锚点，防止 javascript: 伪协议
+  s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, href) => {
+    const ok = /^(https?:\/\/|mailto:)/i.test(href);
+    return `<a href="${ok ? href : "#"}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  });
+
+  s = s.replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "<strong>$2</strong>");
+  // 斜体的前后各加一个边界，避免把 "2 * 3" 这类算式当成强调
+  s = s.replace(/(^|[^*\w])\*(?=\S)([^*\n]*?\S)\*(?!\*)/g, "$1<em>$2</em>");
+  s = s.replace(/(^|[^_\w])_(?=\S)([^_\n]*?\S)_(?!_)/g, "$1<em>$2</em>");
+
+  return s.replace(new RegExp(MD_PH + "(\\d+)" + MD_PH, "g"), (_, i) => `<code>${codes[+i]}</code>`);
+}
+
+/** 围栏代码块：深色卡片 + 语言条 + 复制键 */
+function mdCodeBlock(codeEscaped, lang) {
+  const l = String(lang || "").toLowerCase();
+  return (
+    `<div class="code">` +
+      `<div class="code-hd">` +
+        `<span class="code-lang">${l || "text"}</span>` +
+        `<button type="button" class="code-copy" data-act="copy-code">复制</button>` +
+      `</div>` +
+      `<pre><code>${codeEscaped}</code></pre>` +
+    `</div>`
+  );
+}
+
+/** 表格分隔行：只由 | - : 和空格组成，且至少有一个 - */
+function mdIsSep(l) {
+  return /^\s*[|\s:-]+$/.test(l) && l.includes("-");
+}
+
+function mdSplitRow(line) {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+}
+
+/** 这一行会不会开启一个新的块？段落循环靠它决定在哪停 */
+function mdIsBlockStart(line) {
+  return (
+    /^\s{0,3}#{1,6}\s+/.test(line) ||
+    /^\s*```/.test(line) ||
+    /^\s*>\s?/.test(line) ||
+    /^\s*([-*+]|\d+[.)])\s+/.test(line) ||
+    /^\s*([-*_])(\s*\1){2,}\s*$/.test(line) ||
+    /^\s*\|/.test(line)
+  );
+}
+
+/** 列表：支持一层嵌套（缩进更深的行归到上一条下面） */
+function mdList(lines, start) {
+  const baseIndent = lines[start].match(/^[ \t]*/)[0].length;
+  const ordered = /^\s*\d+[.)]\s+/.test(lines[start]);
+  const items = [];
+  let i = start;
+
+  while (i < lines.length) {
+    const m = lines[i].match(/^([ \t]*)([-*+]|\d+[.)])[ \t]+(.*)$/);
+    if (!m) break;
+    if (m[1].length !== baseIndent) break;   // 更浅=回到上层，更深=交给递归
+
+    let text = m[3];
+    i++;
+
+    // 续行：缩进更深、又不是新的列表项，并回当前条目
+    while (i < lines.length && lines[i].trim() && !/^([ \t]*)([-*+]|\d+[.)])[ \t]+/.test(lines[i]) && /^[ \t]{2,}/.test(lines[i])) {
+      text += " " + lines[i].trim();
+      i++;
+    }
+
+    // 子列表
+    let sub = "";
+    if (i < lines.length) {
+      const nm = lines[i].match(/^([ \t]*)([-*+]|\d+[.)])[ \t]+/);
+      if (nm && nm[1].length > baseIndent) {
+        const r = mdList(lines, i);
+        sub = r.html;
+        i = r.next;
+      }
+    }
+
+    items.push(`<li>${mdInline(escapeHtml(text))}${sub}</li>`);
+  }
+
+  const tag = ordered ? "ol" : "ul";
+  return { html: `<${tag}>${items.join("")}</${tag}>`, next: i };
+}
+
 function renderMarkdown(md) {
-  // 先转义，再做结构化替换，避免 XSS
-  let s = escapeHtml(md);
+  const lines = String(md || "").replace(/\r\n?/g, "\n").split("\n");
+  const out = [];
+  let i = 0;
 
-  // 代码块
-  s = s.replace(/```([\s\S]*?)```/g, (_, code) => `<code>${code.trim()}</code>`);
-  // 行内代码
-  s = s.replace(/`([^`\n]+)`/g, "<code>$1</code>");
-  // 标题
-  s = s.replace(/^###\s+(.*)$/gm, "<h3>$1</h3>");
-  s = s.replace(/^##\s+(.*)$/gm, "<h2>$1</h2>");
-  s = s.replace(/^#\s+(.*)$/gm, "<h1>$1</h1>");
-  // 粗体
-  s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-  // 列表：连续的行合并成一个 <ul>
-  s = s.replace(/(?:^[-*]\s+.*(?:\n|$))+/gm, (block) => {
-    const items = block
-      .trim()
-      .split("\n")
-      .map((l) => `<li>${l.replace(/^[-*]\s+/, "")}</li>`)
-      .join("");
-    return `<ul>${items}</ul>\n`;
-  });
-  // 有序列表
-  s = s.replace(/(?:^\d+\.\s+.*(?:\n|$))+/gm, (block) => {
-    const items = block
-      .trim()
-      .split("\n")
-      .map((l) => `<li>${l.replace(/^\d+\.\s+/, "")}</li>`)
-      .join("");
-    return `<ol>${items}</ol>\n`;
-  });
-  // 剩余的空行分段
-  s = s
-    .split(/\n{2,}/)
-    .map((p) => {
-      const t = p.trim();
-      if (!t) return "";
-      if (/^<(h[1-3]|ul|ol|pre)/.test(t)) return t;
-      return `<p>${t.replace(/\n/g, "<br/>")}</p>`;
-    })
-    .join("\n");
+  while (i < lines.length) {
+    const line = lines[i];
 
-  return s;
+    if (!line.trim()) { i++; continue; }
+
+    // 围栏代码块。没闭合就把剩下的全当代码——流式输出中途必然是这种状态
+    const fence = line.match(/^\s*```\s*([\w+#.-]*)\s*$/);
+    if (fence) {
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) buf.push(lines[i++]);
+      if (i < lines.length) i++;   // 吃掉收尾的 ```
+      out.push(mdCodeBlock(escapeHtml(buf.join("\n")), fence[1]));
+      continue;
+    }
+
+    // 分隔线
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { out.push("<hr/>"); i++; continue; }
+
+    // 标题
+    const h = line.match(/^\s{0,3}(#{1,6})\s+(.*)$/);
+    if (h) {
+      const lv = h[1].length;
+      out.push(`<h${lv}>${mdInline(escapeHtml(h[2]))}</h${lv}>`);
+      i++;
+      continue;
+    }
+
+    // 引用：整块再走一遍块级解析，里面可以继续有列表
+    if (/^\s*>\s?/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ""));
+      out.push(`<blockquote>${renderMarkdown(buf.join("\n"))}</blockquote>`);
+      continue;
+    }
+
+    // 表格：当前行有竖线，且下一行是分隔行
+    if (line.includes("|") && i + 1 < lines.length && mdIsSep(lines[i + 1])) {
+      const head = mdSplitRow(line);
+      const aligns = mdSplitRow(lines[i + 1]).map((c) =>
+        /^:-+:$/.test(c) ? "center" : /-+:$/.test(c) ? "right" : /^:-+/.test(c) ? "left" : ""
+      );
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) rows.push(mdSplitRow(lines[i++]));
+      const cell = (tag, text, k) =>
+        `<${tag}${aligns[k] ? ` style="text-align:${aligns[k]}"` : ""}>${mdInline(escapeHtml(text))}</${tag}>`;
+      const thead = head.map((c, k) => cell("th", c, k)).join("");
+      const tbody = rows
+        .map((r) => "<tr>" + head.map((_, k) => cell("td", r[k] ?? "", k)).join("") + "</tr>")
+        .join("");
+      out.push(`<div class="md-table"><table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table></div>`);
+      continue;
+    }
+
+    // 列表
+    if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+      const r = mdList(lines, i);
+      out.push(r.html);
+      i = r.next;
+      continue;
+    }
+
+    // 段落：至少吃掉一行，避免某行被判成块首却没被任何分支接手时死循环
+    const para = [];
+    while (i < lines.length && lines[i].trim() && (!para.length || !mdIsBlockStart(lines[i]))) {
+      para.push(lines[i++]);
+    }
+    out.push(`<p>${mdInline(escapeHtml(para.join("\n"))).replace(/\n/g, "<br/>")}</p>`);
+  }
+
+  return out.join("");
 }
 
 /** 统一的 DeepSeek 流式调用（返回 port 句柄，便于中断） */
@@ -2942,6 +3185,45 @@ async function generateSummary() {
   );
 }
 
+/** 按钮上短暂显示「已复制」。有 <span> 标签的只改 span，别把图标抹掉 */
+function flashLabel(btn, text) {
+  if (!btn) return;
+  const target = btn.querySelector("span") || btn;
+  const old = target.textContent;
+  target.textContent = text;
+  setTimeout(() => (target.textContent = old), 1200);
+}
+
+/** 复制整条 AI 回答（复制的是渲染后的纯文本，不是 markdown 源码） */
+async function copyMsg(btn) {
+  const box = btn.closest(".msg");
+  const bubble = box?.querySelector(".bubble");
+  if (!bubble) return;
+
+  // 思考过程不该进剪贴板。折叠状态下 <summary> 的文字仍然可见，
+  // 直接取 innerText 会把「思考过程」四个字带进去，所以克隆一份剔掉再取。
+  // 克隆体必须挂到文档里量，否则 innerText 会退化成 textContent，
+  // 列表项之间不会换行。
+  const clone = bubble.cloneNode(true);
+  clone.querySelectorAll(".think-box, .think-body").forEach((n) => n.remove());
+  clone.style.cssText = "position:absolute;left:-9999px;top:0;white-space:normal";
+  document.body.appendChild(clone);
+  const text = clone.innerText.trim();
+  clone.remove();
+
+  if (!text) return;
+  await copyText(text);
+  flashLabel(btn, "已复制");
+}
+
+/** 复制单个代码块 */
+async function copyCode(btn) {
+  const box = btn.closest(".code");
+  const code = box?.querySelector("code");
+  if (!code) return;
+  await copyText(code.textContent);
+  flashLabel(btn, "已复制");
+}
 async function copySummary() {
   const text = state.sum?.text;
   if (!text) return;
@@ -3156,7 +3438,22 @@ function renderAiBubble(thinking, body, upload, final) {
     parts.push(`<div class="think-body">${escapeHtml(upload)}</div>`);
   }
   if (body) parts.push(renderMarkdown(body));
-  return `<div class="bubble md">${parts.join("")}</div>`;
+
+  // 操作栏只在生成结束后出现：流式过程中一直在重渲染，挂上去会闪
+  const actions =
+    final && body
+      ? `<div class="msg-actions">
+           <button type="button" class="act-btn" data-act="copy-msg" title="复制这条回答">
+             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+               <rect x="9" y="9" width="12" height="12" rx="2"></rect>
+               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+             </svg>
+             <span>复制</span>
+           </button>
+         </div>`
+      : "";
+  return `<div class="bubble md">${parts.join("")}</div>${actions}`;
 }
 
 /** 流式过程中更新 AI 气泡 */
@@ -3212,14 +3509,13 @@ function appendNotice(text) {
 function appendMsg(role, text, fileNames = []) {
   const div = document.createElement("div");
   div.className = "msg " + role;
-  const inner = role === "user" ? escapeHtml(text) : renderMarkdown(text);
   const fileHtml = fileNames.length
     ? `<div class="attach" style="margin-top:5px">📎 ${fileNames.map(escapeHtml).join("、")}</div>`
     : "";
   div.innerHTML =
     role === "user"
-      ? `<div class="bubble">${inner}${fileHtml}</div>`
-      : `<div class="bubble md">${inner}</div>`;
+      ? `<div class="bubble">${escapeHtml(text)}${fileHtml}</div>`
+      : renderAiBubble(null, text, null, true);
   els.chatBody.appendChild(div);
   els.chatBody.scrollTop = els.chatBody.scrollHeight;
   return div;
