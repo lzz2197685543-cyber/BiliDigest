@@ -588,6 +588,38 @@ left   = clamp(L.left, 0, vw - width - 8);   // 再收位置
 
 拖动用的是 pointer events，并在捕获阶段 `preventDefault + stopPropagation`——否则 B站播放器会同时收到这次按下，拖面板的过程中视频进度条也跟着动。
 
+#### 胶囊（收起态按钮）的拖动
+
+胶囊既是按钮又要能拖，就得区分「点击」和「拖动」：
+
+- `pointerdown` 时**不能** `preventDefault`——否则 `click` 根本不会触发，面板就打不开了
+- 位移超过 4px 才认定为拖动，否则算点击（容忍手抖）
+- 拖动结束后，浏览器仍会补发一个 `click`，必须在捕获阶段吞掉：
+
+```js
+els.pill.addEventListener("click", (e) => {
+  if (!pillJustDragged) return;
+  e.stopImmediatePropagation();   // 拦在 shadow root 的代理监听之前
+  e.preventDefault();
+}, true);
+```
+
+否则「把按钮拖走」会被当成「点了一下」，面板立刻弹出来，根本拖不动。
+
+**面板跟随胶囊**：从拖走的胶囊打开面板时，面板要以右下角对齐胶囊的位置长出来——
+
+```js
+layout = clampLayout({
+  left: pillRect.right - w,
+  top:  pillRect.bottom - h,
+  width: w, height: h,
+});
+```
+
+不这么做的话，用户把按钮拖到左上角、点开却在右下角弹面板，拖按钮这件事就白做了。默认态本来就是「胶囊在右下角、面板盖在它上方」，这个公式在默认位置下算出来正好是原来的位置，两种状态一致。
+
+胶囊的位置单独存在 `pill:v1`，和面板的 `layout:v1` 互不影响——面板拖到别处不该把按钮也带走。
+
 #### 输入框按键与中文输入法
 
 ```js

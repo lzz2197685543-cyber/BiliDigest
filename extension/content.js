@@ -1043,6 +1043,10 @@ const CSS = `
 .hd { cursor: grab; }
 .wrap.dragging .hd { cursor: grabbing; }
 
+/* 胶囊同样可拖：光标提示 + 拖动中禁止选中 */
+.pill { cursor: grab; }
+.wrap.dragging .pill { cursor: grabbing; }
+
 /* 拖动过程中禁止选中文本，否则会拖出一片蓝色选区 */
 .wrap.dragging { user-select: none; -webkit-user-select: none; }
 .wrap.dragging iframe { pointer-events: none; }
@@ -1546,6 +1550,7 @@ function onPanelClick(e) {
  * 像素反而丢掉了这个好处。
  */
 const LAYOUT_KEY = "layout:v1";
+const PILL_KEY = "pill:v1";
 const LAYOUT_MIN_W = 360;
 const LAYOUT_MIN_H = 340;
 const LAYOUT_EDGE = 8;      // 与视口边缘至少留出的距离
@@ -1553,6 +1558,12 @@ const LAYOUT_EDGE = 8;      // 与视口边缘至少留出的距离
 let layout = null;
 let dragState = null;
 let layoutSaveTimer = null;
+
+/** 收起态胶囊的位置。null = 保持 CSS 默认（右下角） */
+let pillPos = null;
+let pillDrag = null;
+let pillJustDragged = false;
+let pillSaveTimer = null;
 
 /**
  * 约束顺序很重要：先把尺寸定死，再收位置。
@@ -1587,8 +1598,29 @@ function applyLayout() {
   if (!els || !els.panel) return;
   const open = !els.panel.classList.contains("hidden");
 
-  // 收起状态或没有自定义布局 → 退回 CSS 默认（胶囊仍贴在右下角）
-  if (!layout || !open) {
+  if (!open) {
+    // 收起态：只关心胶囊自己的位置，面板样式全部还给 CSS
+    els.panel.style.width = "";
+    els.panel.style.height = "";
+    els.panel.style.maxWidth = "";
+    els.panel.style.maxHeight = "";
+    els.panel.style.minHeight = "";
+    if (pillPos) {
+      els.wrap.style.right = "auto";
+      els.wrap.style.bottom = "auto";
+      els.wrap.style.left = pillPos.left + "px";
+      els.wrap.style.top = pillPos.top + "px";
+    } else {
+      els.wrap.style.left = "";
+      els.wrap.style.top = "";
+      els.wrap.style.right = "";
+      els.wrap.style.bottom = "";
+    }
+    return;
+  }
+
+  // 展开态但没有自定义布局 → 退回 CSS 默认（锚定右下角）
+  if (!layout) {
     els.wrap.style.left = "";
     els.wrap.style.top = "";
     els.wrap.style.right = "";
@@ -1642,14 +1674,89 @@ function scheduleLayoutSave() {
   }, 250);
 }
 
+/* ---------- 收起态：胶囊的拖动 ---------- */
+
+function clampPillPos(p) {
+  const r = els.pill.getBoundingClientRect();
+  const w = r.width || 110;
+  const h = r.height || 32;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  return {
+    left: Math.min(Math.max(Math.round(p.left), LAYOUT_EDGE), Math.max(LAYOUT_EDGE, vw - w - LAYOUT_EDGE)),
+    top: Math.min(Math.max(Math.round(p.top), LAYOUT_EDGE), Math.max(LAYOUT_EDGE, vh - h - LAYOUT_EDGE)),
+  };
+}
+
+function schedulePillSave() {
+  clearTimeout(pillSaveTimer);
+  pillSaveTimer = setTimeout(() => {
+    try { chrome.storage.local.set({ [PILL_KEY]: pillPos }); } catch (e) { /* ignore */ }
+  }, 250);
+}
+
+function onPillPointerDown(e) {
+  if (e.button !== 0) return;
+  pillJustDragged = false;
+  const r = els.pill.getBoundingClientRect();
+  pillDrag = { x: e.clientX, y: e.clientY, left: r.left, top: r.top, moved: false };
+  // 这里**不能** preventDefault：否则点一下不会触发 click，面板就打不开了。
+  // 只有真的移动之后才拦截。
+  window.addEventListener("pointermove", onPillPointerMove, true);
+  window.addEventListener("pointerup", onPillPointerUp, true);
+  window.addEventListener("pointercancel", onPillPointerUp, true);
+}
+
+function onPillPointerMove(e) {
+  if (!pillDrag) return;
+  const dx = e.clientX - pillDrag.x;
+  const dy = e.clientY - pillDrag.y;
+
+  if (!pillDrag.moved) {
+    // 手抖容忍：位移太小仍视为点击
+    if (Math.abs(dx) + Math.abs(dy) < 4) return;
+    pillDrag.moved = true;
+    els.wrap.classList.add("dragging");
+  }
+
+  pillPos = clampPillPos({ left: pillDrag.left + dx, top: pillDrag.top + dy });
+  applyLayout();
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function onPillPointerUp(e) {
+  window.removeEventListener("pointermove", onPillPointerMove, true);
+  window.removeEventListener("pointerup", onPillPointerUp, true);
+  window.removeEventListener("pointercancel", onPillPointerUp, true);
+  if (!pillDrag) return;
+
+  const moved = pillDrag.moved;
+  pillDrag = null;
+  els.wrap.classList.remove("dragging");
+
+  if (!moved) return;   // 没动过 → 交给 click 正常展开面板
+
+  pillJustDragged = true;
+  schedulePillSave();
+  e.preventDefault();
+  e.stopPropagation();
+  // pointerup 之后浏览器还会补一个 click，用它把这次点击吞掉
+  setTimeout(() => { pillJustDragged = false; }, 300);
+}
+
 function loadLayout() {
   try {
-    chrome.storage.local.get(LAYOUT_KEY, (o) => {
+    chrome.storage.local.get([LAYOUT_KEY, PILL_KEY], (o) => {
       const L = o && o[LAYOUT_KEY];
       if (L && typeof L.width === "number" && typeof L.height === "number") {
         layout = clampLayout(L);
-        applyLayout();
       }
+      const P = o && o[PILL_KEY];
+      if (P && typeof P.left === "number" && typeof P.top === "number") {
+        pillPos = clampPillPos(P);
+      }
+      applyLayout();
     });
   } catch (e) { /* 读不到就用默认 */ }
 }
@@ -1719,8 +1826,9 @@ function onDragEnd(e) {
 
 function resetLayout() {
   layout = null;
+  pillPos = null;
   applyLayout();
-  try { chrome.storage.local.remove(LAYOUT_KEY); } catch (e) { /* ignore */ }
+  try { chrome.storage.local.remove([LAYOUT_KEY, PILL_KEY]); } catch (e) { /* ignore */ }
 }
 
 function wireLayout() {
@@ -1738,20 +1846,63 @@ function wireLayout() {
   els.hd.addEventListener("dblclick", () => resetLayout());
   els.resizer.addEventListener("dblclick", () => resetLayout());
 
-  // 窗口尺寸变化时把面板拉回可视范围（比如从扩展屏拔掉外接显示器）
+  // 收起态：胶囊可拖动
+  els.pill.addEventListener("pointerdown", onPillPointerDown);
+
+  // 拖完胶囊松手时浏览器仍会补一个 click，这里在捕获阶段吞掉，
+  // 否则「拖走」会被当成「点了一下」，面板立刻弹出来。
+  els.pill.addEventListener("click", (e) => {
+    if (!pillJustDragged) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }, true);
+
+  // 窗口尺寸变化时把面板/胶囊拉回可视范围（比如拔掉外接显示器）
   window.addEventListener("resize", () => {
-    if (!layout) return;
-    layout = clampLayout(layout);
+    let changed = false;
+    if (layout) {
+      layout = clampLayout(layout);
+      changed = true;
+    }
+    if (pillPos) {
+      pillPos = clampPillPos(pillPos);
+      changed = true;
+    }
+    if (!changed) return;
     applyLayout();
     scheduleLayoutSave();
+    schedulePillSave();
   });
 }
 
 function toggle(force) {
-  state.expanded = force === undefined ? !state.expanded : Boolean(force);
-  els.panel.classList.toggle("hidden", !state.expanded);
-  els.pill.classList.toggle("hidden", state.expanded);
-  applyLayout();          // 展开时套用记忆的尺寸/位置，收起时退回右下角
+  const opening = force === undefined ? !state.expanded : Boolean(force);
+  // 必须在隐藏胶囊之前量，否则拿不到它的位置
+  const pillRect = opening ? els.pill.getBoundingClientRect() : null;
+
+  state.expanded = opening;
+  els.panel.classList.toggle("hidden", !opening);
+  els.pill.classList.toggle("hidden", opening);
+
+  /**
+   * 从「被拖走的胶囊」打开面板时，让面板从胶囊的位置长出来。
+   *
+   * 不这么做的话，用户把按钮拖到左上角、点开却在右下角弹出面板，
+   * 拖按钮这件事就白做了。面板以右下角对齐胶囊，效果和默认态一致：
+   * 默认时胶囊在右下角，面板正好盖在它上方。
+   */
+  if (opening && !layout && pillPos && pillRect && pillRect.width) {
+    const w = els.panel.offsetWidth || 468;
+    const h = els.panel.offsetHeight || Math.round(window.innerHeight * 0.78);
+    layout = clampLayout({
+      left: pillRect.right - w,
+      top: pillRect.bottom - h,
+      width: w,
+      height: h,
+    });
+  }
+
+  applyLayout();          // 展开时套用记忆的尺寸/位置，收起时恢复胶囊位置
   if (state.expanded) {
     if (!state.data) loadSubtitle(state.url);
     renderCues();
