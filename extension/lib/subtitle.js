@@ -47,10 +47,21 @@ export function parseVideoUrl(raw) {
 // ---------------------------------------------------------------------------
 
 /**
- * 字幕 URL 是否属于该 cid。
- * 实测正确 URL 形如：
+ * 字幕 URL 的路径里是否嵌着该 cid —— 只用来「认出」强信号，不用来否定。
+ *
+ * 老地址形如：
  *   //aisubtitle.hdslb.com/bfs/ai_subtitle/prod/8910235<cid>c249d...?auth_key=...
- * 方向：正确 URL 的 path 里一定嵌着 cid；串号 URL 里没有。
+ * 这时 path 里一定嵌着 cid，命中即可确认归属。
+ *
+ * 但 B站后来把地址换成了纯哈希：
+ *   //aisubtitle.hdslb.com/bfs/ai_subtitle/prod/b2bf6b1233c91fb5a36352...?auth_key=...
+ * 以及
+ *   //aisubtitle.hdslb.com/bfs/ai_subtitle/prod/11332168869751826329...
+ * 这两种都找不到 cid，于是「不含 cid 就丢弃」会把合法字幕整批误杀，
+ * 表现为「明明有字幕却显示无字幕」。
+ *
+ * 所以这个函数现在只做正向识别：命中 = 确定是这条；未命中 = 说不准，
+ * 交给下载后的时长校验（validSpan）判断。
  */
 export function subtitleUrlMatchesCid(url, cid) {
   if (!cid) return false;
@@ -90,15 +101,20 @@ function isChineseLang(lan) {
  *
  *   → 中文人工 1100 > 中文AI 950 >> 英文人工 100 > 英文AI 50
  */
-export function scoreTrack(track) {
+export function isAiTrack(track) {
   const lan = String(track?.lan || "").toLowerCase();
   const aiType = track?.ai_type;
-  const isAi =
+  return (
     lan.startsWith("ai-") ||
-    !(aiType === null || aiType === undefined || aiType === 0 || aiType === "0");
+    !(aiType === null || aiType === undefined || aiType === 0 || aiType === "0")
+  );
+}
+
+export function scoreTrack(track) {
+  const lan = String(track?.lan || "").toLowerCase();
   let v = 0;
   if (isChineseLang(lan)) v += 1000;
-  v += isAi ? -50 : 100;
+  v += isAiTrack(track) ? -50 : 100;
   return v;
 }
 
@@ -182,7 +198,6 @@ export async function fetchSubtitleTracks(bvid, cid, onLog, aid) {
   const log = typeof onLog === "function" ? onLog : () => {};
   const clean = [];
   const seen = new Set();
-  let dropped = 0;
   let deadEnd = 0;
   const deadline = Date.now() + SUBTITLE_MAX_MS;
 
@@ -208,16 +223,9 @@ export async function fetchSubtitleTracks(bvid, cid, onLog, aid) {
     }
 
     const tracks = (data.subtitle && data.subtitle.subtitles) || [];
-    let gotWrong = false;
     for (const t of tracks) {
       const url = String(t.subtitle_url || "").trim();
       if (!url) continue;
-      if (!subtitleUrlMatchesCid(url, cid)) {
-        // 缓存串号：属于别的视频，丢弃
-        dropped += 1;
-        gotWrong = true;
-        continue;
-      }
       const key = String(t.id_str || t.id || url);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -226,17 +234,30 @@ export async function fetchSubtitleTracks(bvid, cid, onLog, aid) {
 
     if (clean.length) break;
 
-    if (gotWrong) {
-      // 正确缓存存在，只是本次分片错了：立即重试
-      deadEnd = 0;
-      continue;
-    }
     deadEnd += 1;
     await sleep(SUBTITLE_RETRY_DELAY * deadEnd);
   }
 
-  if (dropped) {
-    log(`丢弃 ${dropped} 个不匹配轨道（CDN 串号），${clean.length ? "命中" : "未命中"} cid=${cid}`);
+  // 收口：只要有一条轨道的地址里嵌着 cid，说明这批数据确实是本视频的。
+  // 此时 AI 轨只留命中 cid 的（挡住 CDN 串号），但**人工字幕一律保留**——
+  // 人工 CC 的地址从来不含 cid，被这条规则连带误杀就等于把 CC 弄丢了，
+  // 而 CC 恰恰是优先级最高的那一档。
+  // 一条命中都没有（地址已改成纯哈希）就不能据此丢弃，全部放行，
+  // 让下载后的时长校验（validSpan）兜底。
+  const matched = clean.filter((t) => subtitleUrlMatchesCid(t.subtitle_url, cid));
+
+  if (matched.length) {
+    const kept = clean.filter(
+      (t) => !isAiTrack(t) || subtitleUrlMatchesCid(t.subtitle_url, cid)
+    );
+    if (kept.length !== clean.length) {
+      log(`按 cid 命中收敛：${kept.length}/${clean.length} 条，cid=${cid}`);
+    }
+    return kept;
+  }
+
+  if (clean.length) {
+    log(`地址不含 cid（B站已改为哈希地址），放行 ${clean.length} 条，改由时长校验把关`);
   }
   return clean;
 }
